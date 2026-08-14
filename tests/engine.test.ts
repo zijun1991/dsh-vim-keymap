@@ -48,3 +48,45 @@ describe('CodeMirrorVimEngine (mode reads after re-sync, not just at constructio
     engine.destroy()
   })
 })
+
+describe('CodeMirrorVimEngine (Normal-mode caret clamp on syncFromHost)', () => {
+  it('pulls a caret sitting past the last character of a line back onto that character', () => {
+    const engine = new CodeMirrorVimEngine()
+    engine.syncFromHost('hello', { start: 5, end: 5 }) // Insert-mode-style caret right after 'o'
+    expect(engine.currentSelection()).toEqual({ start: 4, end: 4, direction: 'forward' })
+
+    engine.destroy()
+  })
+
+  it('leaves a mid-line caret untouched', () => {
+    const engine = new CodeMirrorVimEngine()
+    engine.syncFromHost('hello', { start: 2, end: 2 })
+    expect(engine.currentSelection()).toEqual({ start: 2, end: 2, direction: 'forward' })
+
+    engine.destroy()
+  })
+
+  it('clamps onto the last character of the CURRENT line, not the whole document, for multi-line text', () => {
+    const engine = new CodeMirrorVimEngine()
+    engine.syncFromHost('ab\ncd', { start: 2, end: 2 }) // right after 'b', at the line-1/line-2 boundary
+    expect(engine.currentSelection()).toEqual({ start: 1, end: 1, direction: 'forward' })
+
+    engine.destroy()
+  })
+
+  it('leaves position 0 on an empty line untouched (nothing to pull back onto)', () => {
+    const engine = new CodeMirrorVimEngine()
+    engine.syncFromHost('', { start: 0, end: 0 })
+    expect(engine.currentSelection()).toEqual({ start: 0, end: 0, direction: 'forward' })
+
+    engine.destroy()
+  })
+
+  it('does not clamp an actual (non-collapsed) selection', () => {
+    const engine = new CodeMirrorVimEngine()
+    engine.syncFromHost('hello', { start: 2, end: 5 })
+    expect(engine.currentSelection()).toEqual({ start: 2, end: 5, direction: 'forward' })
+
+    engine.destroy()
+  })
+})

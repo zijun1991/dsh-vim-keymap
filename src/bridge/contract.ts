@@ -21,6 +21,16 @@ export interface VimEngine {
   readonly mode: 'insert' | 'normal' | 'visual' | 'visual-line'
   /** Replace the engine's document and selection with the host's current state (called on entering Normal). */
   syncFromHost(text: string, sel: TextSelection): void
+  /**
+   * The engine's current selection, in host-textarea offset coordinates.
+   * Read right after {@link syncFromHost} to pick up its own
+   * Insert->Normal clamp — a caret sitting past the last character of a
+   * line (the common case right after typing) gets pulled back onto that
+   * character, the same way real vim moves the cursor left by one when
+   * Escape is pressed at the end of a line — since that clamp only updates
+   * the engine's internal state, not the visible host textarea.
+   */
+  currentSelection(): TextSelection
   /** Feed one native keydown event to the engine. Returns true if the engine consumed it. */
   dispatchKey(e: KeyboardEvent): boolean
   /** Fires after a keystroke that changed the document or selection. */

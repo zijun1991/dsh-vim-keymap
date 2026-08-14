@@ -10,10 +10,11 @@
  * an owner prop — `conversation.session.header.actions` declares no owner
  * share (everything comes from the framework session kit), so the shared
  * ModeMachine has to arrive by closure, not by prop. `settings` arrives the
- * same way, and its `enterNormal`/`enterSession` fields feed the adapter
- * through a ref (see `KeymapRef` in textarea-adapter.ts) rather than a
- * mount-effect dependency, so a settings-card edit takes effect without
- * tearing down and recreating the (stateful) vim engine.
+ * same way, and its `enterNormal` field feeds the adapter through a ref (see
+ * `KeymapRef` in textarea-adapter.ts) rather than a mount-effect dependency,
+ * so a settings-card edit takes effect without tearing down and recreating
+ * the (stateful) vim engine. `enterSession` is read by RootOverlay.tsx
+ * instead, not here — see that module's doc comment for why.
  */
 import { useEffect, useRef, useSyncExternalStore } from 'react'
 import type { ModeMachine } from '../../mode-machine.js'
@@ -29,13 +30,12 @@ export interface NormalModeSlotProps {
   inputActions: { setDraft(text: string): void }
 }
 
-// Non-null: DEFAULT_VIM_KEYMAP_SETTINGS's own combo strings are known-good constants.
+// Non-null: DEFAULT_VIM_KEYMAP_SETTINGS's own combo string is a known-good constant.
 const FALLBACK_ENTER_NORMAL = parseKeyCombo(DEFAULT_VIM_KEYMAP_SETTINGS.enterNormal) as KeyCombo
-const FALLBACK_ENTER_SESSION = parseKeyCombo(DEFAULT_VIM_KEYMAP_SETTINGS.enterSession) as KeyCombo
 
 /**
  * @param settings - the local-storage-backed settings store, read for the
- * live `enterNormal`/`enterSession` shortcuts (see module docs above).
+ * live `enterNormal` shortcut (see module docs above).
  * @returns a component to register into `conversation.session.header.actions`; renders nothing.
  */
 export function createNormalModeSlot(
@@ -47,11 +47,8 @@ export function createNormalModeSlot(
     inputActionsRef.current = inputActions
 
     const snapshot = useSyncExternalStore(settings.subscribe, settings.getSnapshot)
-    const keymapRef = useRef({ enterNormal: FALLBACK_ENTER_NORMAL, enterSession: FALLBACK_ENTER_SESSION })
-    keymapRef.current = {
-      enterNormal: parseKeyCombo(snapshot.enterNormal) ?? FALLBACK_ENTER_NORMAL,
-      enterSession: parseKeyCombo(snapshot.enterSession) ?? FALLBACK_ENTER_SESSION,
-    }
+    const keymapRef = useRef({ enterNormal: FALLBACK_ENTER_NORMAL })
+    keymapRef.current = { enterNormal: parseKeyCombo(snapshot.enterNormal) ?? FALLBACK_ENTER_NORMAL }
 
     useEffect(() => {
       const textarea = findComposerTextarea()

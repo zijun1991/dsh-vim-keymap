@@ -1,12 +1,19 @@
 /**
  * Bridges a {@link VimEngine} to the real, unmodified composer `<textarea>`,
- * and owns every mode-entry key that fires while that textarea has focus
- * (Esc -> Normal from Insert; Shift+Esc -> Session from either Insert or
- * Normal, by default — see {@link KeymapRef} for how the settings card
- * overrides these live). Installed as one capture-phase
+ * and owns the Insert -> Normal mode-entry key that fires while that
+ * textarea has focus (Esc by default — see {@link KeymapRef} for how the
+ * settings card overrides this live), plus the Insert-mode Enter/send
+ * convention (see {@link isSendCombo}: only the platform send combo
+ * submits, a bare Enter always inserts a newline). The Shift-Escape "jump to
+ * Session" shortcut lives in RootOverlay.tsx instead, as a global listener —
+ * unlike entering Normal mode, which inherently needs this textarea focused
+ * (it means "vim-edit THIS text field"), jumping to Session has no such
+ * requirement, and scoping it to this element's own keydown listener meant
+ * it silently did nothing whenever focus had drifted elsewhere (confirmed
+ * against a real running dsh instance). Installed as one capture-phase
  * native keydown listener — InputBar's own bubble-phase React handler never
- * sees a key this adapter decides to own; every other key (plain typing, the
- * send shortcut, IME composition) is left completely alone.
+ * sees a key this adapter decides to own; every other key (plain typing,
+ * IME composition) is left completely alone.
  */
 import { matchesKeyCombo, parseKeyCombo } from '../../key-combo.js'
 import type { KeyCombo } from '../../key-combo.js'
@@ -14,15 +21,30 @@ import { DEFAULT_VIM_KEYMAP_SETTINGS } from '../../settings.js'
 import type { ModeMachine } from '../../mode-machine.js'
 import type { VimEngine } from '../../bridge/contract.js'
 
-/** Live mode-entry shortcuts, re-read every keystroke via a mutable ref so a settings-card edit takes effect without recreating the adapter (mirrors RootOverlay.tsx's `indexRef` pattern). */
+/** Live Insert -> Normal shortcut, re-read every keystroke via a mutable ref so a settings-card edit takes effect without recreating the adapter (mirrors RootOverlay.tsx's `indexRef` pattern). */
 export interface KeymapRef {
-  current: { enterNormal: KeyCombo; enterSession: KeyCombo }
+  current: { enterNormal: KeyCombo }
 }
 
-// Non-null: DEFAULT_VIM_KEYMAP_SETTINGS's own combo strings are known-good constants.
+// Non-null: DEFAULT_VIM_KEYMAP_SETTINGS's own combo string is a known-good constant.
 const DEFAULT_KEYMAP: KeymapRef['current'] = {
   enterNormal: parseKeyCombo(DEFAULT_VIM_KEYMAP_SETTINGS.enterNormal) as KeyCombo,
-  enterSession: parseKeyCombo(DEFAULT_VIM_KEYMAP_SETTINGS.enterSession) as KeyCombo,
+}
+
+function isMacPlatform(): boolean {
+  return typeof navigator === 'object' && /mac/i.test(navigator.platform || navigator.userAgent || '')
+}
+
+/**
+ * The host's agreed "send" gesture: Cmd+Enter on Mac, Alt+Enter elsewhere
+ * (checked live, not cached, so a test can stub `navigator` per case).
+ * Cmd+Enter never actually reaches this check — the unconditional
+ * `e.metaKey` bypass in {@link attachTextareaAdapter}'s `onKeyDown` already
+ * lets it through before any mode logic runs — but it's still correct to
+ * name here for clarity.
+ */
+function isSendCombo(e: KeyboardEvent): boolean {
+  return e.key === 'Enter' && (isMacPlatform() ? e.metaKey : e.altKey)
 }
 
 /**
@@ -47,7 +69,7 @@ export interface TextareaAdapterOptions {
   readonly engine: VimEngine
   readonly inputActions: DraftWriter
   readonly mode: ModeMachine
-  /** Mode-entry shortcuts, live-editable via the settings card; defaults to the stock Escape/Shift+Escape combos when omitted (every existing caller). */
+  /** Insert -> Normal shortcut, live-editable via the settings card; defaults to the stock Escape combo when omitted (every existing caller). */
   readonly keymap?: KeymapRef
 }
 
@@ -75,6 +97,14 @@ export function attachTextareaAdapter(options: TextareaAdapterOptions): Textarea
     if (engineMode === 'insert') mode.enterInsert()
   })
 
+  const insertNewlineAtCaret = (): void => {
+    const start = textarea.selectionStart ?? textarea.value.length
+    const end = textarea.selectionEnd ?? start
+    const next = `${textarea.value.slice(0, start)}\n${textarea.value.slice(end)}`
+    inputActions.setDraft(next)
+    restoreCaret(start + 1, start + 1)
+  }
+
   const enterNormalFromHost = (): void => {
     engine.syncFromHost(textarea.value, {
       start: textarea.selectionStart ?? 0,
@@ -82,6 +112,17 @@ export function attachTextareaAdapter(options: TextareaAdapterOptions): Textarea
       direction: textarea.selectionDirection === 'backward' ? 'backward' : 'forward',
     })
     mode.enterNormal()
+    // syncFromHost clamps a caret sitting past the last character of a line
+    // (the common case right after typing) back onto that character —
+    // see engine.ts's clampToNormalModeCaret. That clamp only updates the
+    // engine's own internal state, though; nothing reads it back onto the
+    // visible host textarea automatically the way every later
+    // onChange-driven edit does (confirmed against a real running dsh
+    // instance: without this readback, the caret stayed stranded one
+    // character past the end and every rightward motion looked like it
+    // could never reach it).
+    const corrected = engine.currentSelection()
+    restoreCaret(corrected.start, corrected.end)
   }
 
   const onKeyDown = (e: KeyboardEvent): void => {
@@ -97,7 +138,7 @@ export function attachTextareaAdapter(options: TextareaAdapterOptions): Textarea
     // the one case this adapter must never touch.
     if (e.isComposing) return
     const current = mode.current.mode
-    const { enterNormal, enterSession } = keymap?.current ?? DEFAULT_KEYMAP
+    const { enterNormal } = keymap?.current ?? DEFAULT_KEYMAP
     if (current === 'insert') {
       if (matchesKeyCombo(e, enterNormal)) {
         e.preventDefault()
@@ -105,39 +146,36 @@ export function attachTextareaAdapter(options: TextareaAdapterOptions): Textarea
         enterNormalFromHost()
         return
       }
-      if (matchesKeyCombo(e, enterSession)) {
+      if (e.key === 'Enter' && !isSendCombo(e)) {
+        // The host's own bubble-phase handler treats a bare Enter as "send"
+        // by default; the agreed convention here is the opposite (see
+        // README's Modes diagram): Enter always inserts a newline, and only
+        // the platform send combo submits. preventDefault() here, then
+        // insert the newline ourselves through the one public draft-write
+        // path — confirmed against a real running dsh instance that
+        // stopPropagation() alone is not enough to let the browser's own
+        // native newline-insertion default run: something upstream of this
+        // listener already calls preventDefault() on a bare Enter (this
+        // plugin never controls when), so relying on that default silently
+        // did nothing.
         e.preventDefault()
         e.stopPropagation()
-        // Session mode's keydown handling is document-level and expects to
-        // own every keystroke; leaving the textarea focused would hand a
-        // live IME (if the user had one enabled, composing or not) first
-        // crack at j/k/h/l instead, turning navigation keys into IME
-        // candidate-selection input.
-        textarea.blur()
-        mode.enterSession()
+        insertNewlineAtCaret()
         return
       }
-      return // every other Insert-mode key passes through to InputBar untouched
+      return // every other Insert-mode key (typing, the send combo, ...) passes through to InputBar untouched
     }
     if (current === 'normal') {
       e.preventDefault()
       e.stopPropagation()
-      if (matchesKeyCombo(e, enterSession)) {
-        // Same global "jump to Session" shortcut as Insert mode's — Normal
-        // is still Insert's own textarea, just mid-edit, so the same
-        // IME-safety blur applies before Session's document-level keydown
-        // handler takes over.
-        textarea.blur()
-        mode.enterSession()
-        return
-      }
       if (e.key === ':') {
         // The vim engine's own ':' (its ex command line) is never visible —
         // it lives on the headless, never-mounted shadow EditorView. This
-        // plugin's actual Command palette is what must open instead; blur for
-        // the same IME-safety reason Shift+Escape does (see above), even
-        // though the palette's own autoFocus would eventually steal focus
-        // anyway — this closes the brief window before it mounts.
+        // plugin's actual Command palette is what must open instead; blur
+        // for the same IME-safety reason RootOverlay.tsx's Shift-Escape
+        // handler does, even though the palette's own autoFocus would
+        // eventually steal focus anyway — this closes the brief window
+        // before it mounts.
         textarea.blur()
         mode.enterCommand('normal')
         return

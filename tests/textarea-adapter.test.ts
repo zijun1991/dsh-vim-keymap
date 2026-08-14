@@ -101,7 +101,7 @@ describe('attachTextareaAdapter (real host keydown -> shadow engine)', () => {
     textarea.remove()
   })
 
-  it('blurs the textarea on Shift+Escape, so a live IME cannot intercept Session-mode keys', () => {
+  it('no longer treats Shift+Escape as its own concern — that shortcut is RootOverlay.tsx\'s global listener now (see tests/root-overlay.test.tsx)', () => {
     const textarea = document.createElement('textarea')
     textarea.value = ''
     document.body.appendChild(textarea)
@@ -112,43 +112,95 @@ describe('attachTextareaAdapter (real host keydown -> shadow engine)', () => {
     const setDraft = vi.fn()
     const adapter = attachTextareaAdapter({ textarea, engine, mode, inputActions: { setDraft } })
 
-    expect(document.activeElement).toBe(textarea)
     press(textarea, { key: 'Escape', shiftKey: true })
 
-    expect(mode.current.mode).toBe('session')
-    expect(document.activeElement).not.toBe(textarea)
+    expect(mode.current.mode).toBe('insert') // unchanged: this adapter alone no longer acts on it
+    expect(document.activeElement).toBe(textarea) // and does not blur it either
 
     adapter.dispose()
     engine.destroy()
     textarea.remove()
   })
 
-  it('also blurs and enters Session on Shift+Escape from Normal mode, not just Insert', () => {
+  it('pulls the caret back onto the last character of a line on entering Normal mode (real vim\'s own Insert->Normal clamp)', async () => {
     const textarea = document.createElement('textarea')
-    textarea.value = ''
+    textarea.value = 'hello'
     document.body.appendChild(textarea)
     textarea.focus()
+    textarea.setSelectionRange(5, 5) // Insert-mode-style caret right after 'o'
 
     const engine = new CodeMirrorVimEngine()
     const mode = new ModeMachine()
     const setDraft = vi.fn()
     const adapter = attachTextareaAdapter({ textarea, engine, mode, inputActions: { setDraft } })
 
-    mode.enterNormal() // as the real Esc handler would do
-    engine.syncFromHost(textarea.value, { start: 0, end: 0 })
+    press(textarea, { key: 'Escape' })
     expect(mode.current.mode).toBe('normal')
 
-    press(textarea, { key: 'Escape', shiftKey: true })
-
-    expect(mode.current.mode).toBe('session')
-    expect(document.activeElement).not.toBe(textarea)
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    expect(textarea.selectionStart).toBe(4)
+    expect(textarea.selectionEnd).toBe(4)
 
     adapter.dispose()
     engine.destroy()
     textarea.remove()
   })
 
-  it('honors a live-configured keymap instead of the Escape/Shift+Escape defaults', () => {
+  it('inserts a newline for a bare Enter instead of letting the host treat it as "send"', () => {
+    const textarea = document.createElement('textarea')
+    textarea.value = 'hello'
+    document.body.appendChild(textarea)
+    textarea.focus()
+    textarea.setSelectionRange(5, 5)
+
+    const engine = new CodeMirrorVimEngine()
+    const mode = new ModeMachine()
+    const setDraft = vi.fn()
+    const adapter = attachTextareaAdapter({ textarea, engine, mode, inputActions: { setDraft } })
+
+    let bubbledPastTextarea = false
+    const onDocumentKeyDown = (): void => { bubbledPastTextarea = true }
+    document.addEventListener('keydown', onDocumentKeyDown)
+    press(textarea, { key: 'Enter' })
+    document.removeEventListener('keydown', onDocumentKeyDown)
+
+    expect(setDraft).toHaveBeenCalledWith('hello\n')
+    expect(bubbledPastTextarea).toBe(false) // the host's own submit-on-Enter handler must never see it
+    expect(mode.current.mode).toBe('insert') // Enter is not a mode-entry key
+
+    adapter.dispose()
+    engine.destroy()
+    textarea.remove()
+  })
+
+  it('lets the platform send combo (Cmd+Enter on Mac, Alt+Enter elsewhere) reach the host untouched', () => {
+    const textarea = document.createElement('textarea')
+    textarea.value = 'hello'
+    document.body.appendChild(textarea)
+    textarea.focus()
+    textarea.setSelectionRange(5, 5)
+
+    const engine = new CodeMirrorVimEngine()
+    const mode = new ModeMachine()
+    const setDraft = vi.fn()
+    const adapter = attachTextareaAdapter({ textarea, engine, mode, inputActions: { setDraft } })
+
+    const isMac = /mac/i.test(navigator.platform || navigator.userAgent || '')
+    let bubbledToDocument = false
+    const onDocumentKeyDown = (): void => { bubbledToDocument = true }
+    document.addEventListener('keydown', onDocumentKeyDown)
+    press(textarea, isMac ? { key: 'Enter', metaKey: true } : { key: 'Enter', altKey: true })
+    document.removeEventListener('keydown', onDocumentKeyDown)
+
+    expect(bubbledToDocument).toBe(true) // the host's own submit handler must see it
+    expect(setDraft).not.toHaveBeenCalled() // this adapter must never touch the draft for the send combo
+
+    adapter.dispose()
+    engine.destroy()
+    textarea.remove()
+  })
+
+  it('honors a live-configured enterNormal combo instead of the Escape default', () => {
     const textarea = document.createElement('textarea')
     textarea.value = ''
     document.body.appendChild(textarea)
@@ -158,9 +210,8 @@ describe('attachTextareaAdapter (real host keydown -> shadow engine)', () => {
     const mode = new ModeMachine()
     const setDraft = vi.fn()
     const enterNormal = parseKeyCombo('Ctrl+j')
-    const enterSession = parseKeyCombo('Ctrl+k')
-    if (enterNormal === null || enterSession === null) throw new Error('unreachable')
-    const keymap = { current: { enterNormal, enterSession } }
+    if (enterNormal === null) throw new Error('unreachable')
+    const keymap = { current: { enterNormal } }
     const adapter = attachTextareaAdapter({ textarea, engine, mode, inputActions: { setDraft }, keymap })
 
     press(textarea, { key: 'Escape' }) // the default combo must no longer fire
@@ -168,11 +219,6 @@ describe('attachTextareaAdapter (real host keydown -> shadow engine)', () => {
 
     press(textarea, { key: 'j', ctrlKey: true })
     expect(mode.current.mode).toBe('normal')
-
-    mode.enterInsert()
-    textarea.focus()
-    press(textarea, { key: 'k', ctrlKey: true })
-    expect(mode.current.mode).toBe('session')
 
     adapter.dispose()
     engine.destroy()

@@ -2,21 +2,34 @@
  * Registered into `shell.overlay` (the additive, click-through-until-opted-in
  * global overlay slot ui-layout documents — never into `root`, which is
  * AppFrame's exclusive seat). Owns Session-mode's tree navigation and hosts
- * the Command palette; renders nothing while in Insert/Normal.
+ * the Command palette, the mode badge, the global (focus-independent)
+ * Shift-Escape "jump to Session" shortcut, and a double-Escape "rescue"
+ * gesture back to Insert that works regardless of current mode or focus (see
+ * the always-on keydown effects below); renders nothing itself while in
+ * Insert/Normal.
  *
  * `mode` arrives by closure (see createNormalModeSlot.ts for why): `shell.overlay`
  * declares no owner share either.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ModeMachine } from '../../mode-machine.js'
 import type { TreeRow } from '../../bridge/contract.js'
 import type { LocalKeymapSettingsStore } from '../settings/local-store.js'
 import { createWorkspaceTreeBridge } from '../workspace/tree-bridge.js'
 import { findComposerTextarea } from '../normal/textarea-adapter.js'
 import { saveSessionLog } from '../session/session-log-bridge.js'
+import { matchesKeyCombo, parseKeyCombo } from '../../key-combo.js'
+import type { KeyCombo } from '../../key-combo.js'
+import { DEFAULT_VIM_KEYMAP_SETTINGS } from '../../settings.js'
 import { HighlightOverlay } from './HighlightOverlay.js'
 import { CommandPalette } from './CommandPalette.js'
 import { ModeIndicator } from './ModeIndicator.js'
+
+/** A second bare Escape within this window of the first counts as the "rescue" double-tap (see the always-on keydown effect below). */
+const DOUBLE_ESCAPE_WINDOW_MS = 500
+
+// Non-null: DEFAULT_VIM_KEYMAP_SETTINGS's own combo string is a known-good constant.
+const FALLBACK_ENTER_SESSION = parseKeyCombo(DEFAULT_VIM_KEYMAP_SETTINGS.enterSession) as KeyCombo
 
 /**
  * @param mode - the plugin-wide mode singleton.
@@ -38,6 +51,66 @@ export function createRootOverlay(
     const indexRef = useRef(0)
 
     useEffect(() => mode.onChange(setState), [])
+
+    // Global "jump to Session" shortcut (Shift+Escape by default, the same
+    // enterSession setting textarea-adapter.ts used to read for this too) —
+    // moved here and made always-on rather than scoped to the composer
+    // textarea having focus: unlike enterNormal (which inherently needs the
+    // textarea focused, since Normal mode means "vim-edit THIS text field"),
+    // there is nothing about jumping to Session that requires the textarea
+    // to be the active element, and requiring it anyway meant the shortcut
+    // silently did nothing whenever focus had drifted elsewhere (confirmed
+    // against a real running dsh instance) — the same class of problem the
+    // double-Escape rescue below exists for.
+    const snapshot = useSyncExternalStore(settings.subscribe, settings.getSnapshot)
+    const enterSessionRef = useRef(FALLBACK_ENTER_SESSION)
+    enterSessionRef.current = parseKeyCombo(snapshot.enterSession) ?? FALLBACK_ENTER_SESSION
+
+    useEffect(() => {
+      const onKeyDown = (e: KeyboardEvent): void => {
+        const current = mode.current.mode
+        if (current !== 'insert' && current !== 'normal') return
+        if (!matchesKeyCombo(e, enterSessionRef.current)) return
+        e.preventDefault()
+        e.stopPropagation()
+        // Session's own keydown handling (below) is document-level and
+        // expects to own every keystroke; leaving the composer focused would
+        // hand a live IME first crack at j/k/h/l instead, turning navigation
+        // keys into IME candidate-selection input (same reasoning as
+        // textarea-adapter.ts's own blur-before-Escape handling).
+        findComposerTextarea()?.blur()
+        mode.enterSession()
+      }
+      document.addEventListener('keydown', onKeyDown, { capture: true })
+      return () => { document.removeEventListener('keydown', onKeyDown, { capture: true }) }
+    }, [])
+
+    // Global rescue gesture, active for the plugin's entire lifetime
+    // regardless of current mode or where browser focus actually is: every
+    // other keydown listener this plugin installs is scoped to either the
+    // composer textarea (textarea-adapter.ts, Insert/Normal) or the document
+    // but only while Session is current (below) — if focus has drifted
+    // somewhere neither of those covers (e.g. a host button was clicked),
+    // NOTHING is listening for Escape at all, and the user is stuck with no
+    // keyboard way back in. A double-tapped bare Escape always works because
+    // this listener doesn't care what has focus or which mode is current.
+    useEffect(() => {
+      let lastEscapeAt = 0
+      const onKeyDown = (e: KeyboardEvent): void => {
+        if (e.key !== 'Escape' || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return
+        const now = Date.now()
+        const isDoubleTap = now - lastEscapeAt <= DOUBLE_ESCAPE_WINDOW_MS
+        lastEscapeAt = now
+        if (!isDoubleTap) return
+        lastEscapeAt = 0 // consumed; a third press starts a fresh pair rather than re-triggering immediately
+        e.preventDefault()
+        e.stopPropagation()
+        mode.enterInsert()
+        findComposerTextarea()?.focus()
+      }
+      document.addEventListener('keydown', onKeyDown, { capture: true })
+      return () => { document.removeEventListener('keydown', onKeyDown, { capture: true }) }
+    }, [])
 
     // Session-mode keydown handling: document-level, active only while the
     // Session state is current. Does not move real browser focus — the
