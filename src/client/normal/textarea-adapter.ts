@@ -67,6 +67,12 @@ export function attachTextareaAdapter(options: TextareaAdapterOptions): Textarea
   }
 
   const onKeyDown = (e: KeyboardEvent): void => {
+    // Meta (Cmd on Mac) is never a vim modifier — real vim in a terminal never
+    // even sees it (the terminal/OS owns it). Bypassing it here, in every
+    // mode, is what keeps Cmd+C/Cmd+V/Cmd+A and InputBar's own Cmd+Enter send
+    // shortcut working while Normal mode is active; without this, the
+    // unconditional preventDefault below swallowed all of them.
+    if (e.metaKey) return
     const current = mode.current.mode
     if (current === 'insert') {
       if (e.key === 'Escape' && !e.shiftKey) {

@@ -62,9 +62,27 @@ export class CodeMirrorVimEngine implements VimEngine {
     const beforeText = this.view.state.doc.toString()
     const beforeSel = this.view.state.selection.main
 
+    // A NEW event, not `e` itself: `e` is still mid-dispatch on the real
+    // textarea (this method runs from inside one of its own listeners), and
+    // the DOM spec forbids re-dispatching an event while its own dispatch is
+    // in progress — `view.contentDOM.dispatchEvent(e)` throws
+    // InvalidStateError in that state (verified against a real DOM
+    // implementation, not assumed). Cloning the fields CM6/vim actually reads
+    // sidesteps that entirely.
+    const clone = new KeyboardEvent('keydown', {
+      key: e.key,
+      code: e.code,
+      shiftKey: e.shiftKey,
+      ctrlKey: e.ctrlKey,
+      altKey: e.altKey,
+      metaKey: e.metaKey,
+      repeat: e.repeat,
+      bubbles: true,
+      cancelable: true,
+    })
     // CM6/codemirror-vim key handling lives on contentDOM; `dispatchEvent`'s
     // return value reports `preventDefault()`, which is what "consumed" means here.
-    const notCancelled = this.view.contentDOM.dispatchEvent(e)
+    const notCancelled = this.view.contentDOM.dispatchEvent(clone)
     const consumed = !notCancelled
 
     const mode = this.readMode()
