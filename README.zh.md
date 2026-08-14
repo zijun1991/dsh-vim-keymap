@@ -10,6 +10,27 @@
 
 所以判断要不要加一个新行为，标准很简单：它是不是真的解决了某个具体的键盘操作痛点。比如焦点已经离开输入框时 Shift+Esc 依然要能跳到 Session 模式，或者在别的监听都覆盖不到的时候，连按两次 Escape 能当作退回的手段，又或者用一个 `save` 命令替代点击宿主"Session log"按钮这个鼠标动作——这些都是在解决具体问题，而不是为了凑齐一套 `.vimrc` 级别的完整 vim 配置。Normal 模式的文本编辑能力，就是 `@replit/codemirror-vim` 开箱即用的那一套，没有做任何扩展；Command 模式的命令词表目前只有一个 `save`（详见下文"已知限制"），这正是上面这条原则的体现，不是没做完。
 
+## 安装
+
+这个包已经发布到 npm 上，就是 [`dsh-vim-keymap`](https://www.npmjs.com/package/dsh-vim-keymap)。它是挂在某个 `dsh` *profile*（`deepseek-harness` 的部署配置）上的，不是挂在 deepseek-harness 源码上——所以装它是在改 profile 的配置，不是在改代码：
+
+1. 确定要挂到哪个 profile 上（比如 `$DSH_HOME/profiles/web/`），把它加进那个 profile 的 `package.json` 的 `dependencies` 里：
+   ```json
+   "dsh-vim-keymap": "^0.1.0"
+   ```
+2. 装上它：在那个 profile 目录里跑 `pnpm install`（或者那个 profile 本来用的 `npm install`/`yarn install`，用哪个都行）。
+3. 在那个 profile 的 `cordis.patch.yml` 里加一行，把它注册给 Cordis：
+   ```yaml
+   - insert:
+       - id: dsh-vim-keymap
+         name: dsh-vim-keymap
+   ```
+4. 启动（或重启）`dsh --profile web`——四种模式和"Vim Keymap"设置卡片（Settings → Plugins → Plugin configuration）立刻就能用，不需要再做别的配置。
+
+如果还没有 profile，先跑一次 `dsh --profile web --help`——这会自动初始化 `$DSH_HOME/profiles/web/`（没设 `$DSH_HOME` 的话默认是 `~/.dsh`），这样第 1、3 步要改的 `package.json`/`cordis.patch.yml` 就都有了。
+
+下文"在真实 dsh 上验证"用的其实是同一套 profile 层面的机制，只不过那边装的是 `link:/path/to/this/repo` 指向本地构建产物，而不是从 npm 装发布出去的版本。
+
 ## 模式
 
 ```

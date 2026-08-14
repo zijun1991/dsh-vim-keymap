@@ -25,6 +25,27 @@ the host's "Session log" button — not to chase feature parity with a
 vocabulary staying at one command (see "Known limitations" below) is this
 principle in practice, not an oversight.
 
+## Installation
+
+This is published on npm as [`dsh-vim-keymap`](https://www.npmjs.com/package/dsh-vim-keymap). It attaches to a `dsh` *profile* (a `deepseek-harness` deployment config), not to deepseek-harness's own source — so installing it is a profile-level change, not a code change:
+
+1. Pick which profile to attach it to (e.g. `$DSH_HOME/profiles/web/`) and add it to that profile's `package.json` `dependencies`:
+   ```json
+   "dsh-vim-keymap": "^0.1.0"
+   ```
+2. Install it: `pnpm install` (or `npm install`/`yarn install`, whichever that profile already uses) inside the profile directory.
+3. Register it with Cordis by adding a row to that profile's `cordis.patch.yml`:
+   ```yaml
+   - insert:
+       - id: dsh-vim-keymap
+         name: dsh-vim-keymap
+   ```
+4. Start (or restart) `dsh --profile web` — the four modes and the "Vim Keymap" settings card (Settings → Plugins → Plugin configuration) are live immediately, no further setup.
+
+If you don't have a profile yet, run `dsh --profile web --help` once first — that auto-initializes `$DSH_HOME/profiles/web/` (defaults to `~/.dsh` if `$DSH_HOME` isn't set) so there's a `package.json`/`cordis.patch.yml` to edit in step 1/3.
+
+This is the same profile-level mechanism "Real dsh verification" below uses to exercise this repo itself during development — the only difference there is installing via `link:/path/to/this/repo` against a local build instead of a published version from npm.
+
 ## Modes
 
 ```
