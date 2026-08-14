@@ -20,13 +20,25 @@ export const inject = ['slots']
 export function apply(ctx: ClientContext): void {
   const mode = new ModeMachine()
 
-  ctx.slots.register(
+  // Both targets are declared by another plugin's own register() call
+  // (session-scoped 'conversation.session.header.actions' by a session's
+  // header component; root-scoped 'shell.overlay' by ui-layout's AppFrame),
+  // not by us — registering directly races that declaration and throws "slot
+  // ... is not declared" whenever ours runs first (confirmed against a real
+  // running dsh --profile web instance for both slots: the boot graph's
+  // per-package `inject` edges are informational metadata for preflight
+  // display/HMR diffing, not an activation-order guarantee — see
+  // packages/client/modules/src/client/manifest.ts's WebBootEntry.inject
+  // doc). ctx.slots.inject() is the documented, race-free pattern (see
+  // ui-jobs/ui-subagent/ui-agent-preset's client/index.ts): it waits for the
+  // declaration, re-registers on every redeclare, and tears down on collapse.
+  ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register(
     { name: 'conversation.session.header.actions', id: 'dsh-vim-keymap-normal-bridge' },
     createNormalModeSlot(mode),
-  )
+  ))
 
-  ctx.slots.register(
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register(
     { name: 'shell.overlay', id: 'dsh-vim-keymap-overlay' },
     createRootOverlay(mode),
-  )
+  ))
 }
