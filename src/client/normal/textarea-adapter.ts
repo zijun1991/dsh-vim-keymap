@@ -89,6 +89,12 @@ export function attachTextareaAdapter(options: TextareaAdapterOptions): Textarea
       if (e.key === 'Escape' && e.shiftKey) {
         e.preventDefault()
         e.stopPropagation()
+        // Session mode's keydown handling is document-level and expects to
+        // own every keystroke; leaving the textarea focused would hand a
+        // live IME (if the user had one enabled, composing or not) first
+        // crack at j/k/h/l instead, turning navigation keys into IME
+        // candidate-selection input.
+        textarea.blur()
         mode.enterSession()
         return
       }
@@ -97,6 +103,17 @@ export function attachTextareaAdapter(options: TextareaAdapterOptions): Textarea
     if (current === 'normal') {
       e.preventDefault()
       e.stopPropagation()
+      if (e.key === ':') {
+        // The vim engine's own ':' (its ex command line) is never visible —
+        // it lives on the headless, never-mounted shadow EditorView. This
+        // plugin's actual Command palette is what must open instead; blur for
+        // the same IME-safety reason Shift+Escape does (see above), even
+        // though the palette's own autoFocus would eventually steal focus
+        // anyway — this closes the brief window before it mounts.
+        textarea.blur()
+        mode.enterCommand('normal')
+        return
+      }
       engine.dispatchKey(e)
     }
     // Session/Command mode: this textarea is not the active surface; do nothing.

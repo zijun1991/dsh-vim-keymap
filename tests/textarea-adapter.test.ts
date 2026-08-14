@@ -99,4 +99,26 @@ describe('attachTextareaAdapter (real host keydown -> shadow engine)', () => {
     engine.destroy()
     textarea.remove()
   })
+
+  it('blurs the textarea on Shift+Escape, so a live IME cannot intercept Session-mode keys', () => {
+    const textarea = document.createElement('textarea')
+    textarea.value = ''
+    document.body.appendChild(textarea)
+    textarea.focus()
+
+    const engine = new CodeMirrorVimEngine()
+    const mode = new ModeMachine()
+    const setDraft = vi.fn()
+    const adapter = attachTextareaAdapter({ textarea, engine, mode, inputActions: { setDraft } })
+
+    expect(document.activeElement).toBe(textarea)
+    press(textarea, { key: 'Escape', shiftKey: true })
+
+    expect(mode.current.mode).toBe('session')
+    expect(document.activeElement).not.toBe(textarea)
+
+    adapter.dispose()
+    engine.destroy()
+    textarea.remove()
+  })
 })

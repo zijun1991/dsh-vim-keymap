@@ -10,10 +10,12 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ModeMachine } from '../../mode-machine.js'
 import type { TreeRow } from '../../bridge/contract.js'
+import { DEFAULT_KEYMAP_CONFIG } from '../../config.js'
 import { createWorkspaceTreeBridge } from '../workspace/tree-bridge.js'
 import { findComposerTextarea } from '../normal/textarea-adapter.js'
 import { HighlightOverlay } from './HighlightOverlay.js'
 import { CommandPalette } from './CommandPalette.js'
+import { ModeIndicator } from './ModeIndicator.js'
 
 /** @returns a component to register into `shell.overlay`. */
 export function createRootOverlay(mode: ModeMachine): () => React.JSX.Element | null {
@@ -63,16 +65,22 @@ export function createRootOverlay(mode: ModeMachine): () => React.JSX.Element | 
         } else if (e.key === 'k') {
           e.preventDefault()
           setHighlight(current, Math.max(indexRef.current - 1, 0))
-        } else if (e.key === 'h' || e.key === 'l') {
-          e.preventDefault()
-          const row = current[indexRef.current]
-          if (row !== undefined) bridge.toggleFold(row)
-          refreshAfterMutation()
         } else if (e.key === 'Enter') {
           e.preventDefault()
           const row = current[indexRef.current]
-          if (row !== undefined) bridge.activate(row)
-          refreshAfterMutation()
+          if (row === undefined) return
+          // A workspace (group) row's Enter is the fold toggle — h/l carry no
+          // fold logic of their own. A session/search-result row's Enter is a
+          // completed navigation: activate it, then return to Insert exactly
+          // like Escape does (composer refocus included).
+          if (row.kind === 'group') {
+            bridge.toggleFold(row)
+            refreshAfterMutation()
+          } else {
+            bridge.activate(row)
+            mode.enterInsert()
+            findComposerTextarea()?.focus()
+          }
         } else if (e.key === '/') {
           e.preventDefault()
           bridge.focusSearch()
@@ -89,19 +97,41 @@ export function createRootOverlay(mode: ModeMachine): () => React.JSX.Element | 
       return () => { document.removeEventListener('keydown', onKeyDown, { capture: true }) }
     }, [state.mode])
 
+    const modeIndicator = <ModeIndicator mode={mode} display={DEFAULT_KEYMAP_CONFIG.modeIndicator} />
+
     if (state.mode === 'command') {
+      const flavor = state.commandFlavor ?? 'session'
+      // Normal mode's "surface" is the composer textarea itself — the
+      // palette's autoFocus took focus away from it, and textarea-adapter's
+      // keydown listener sits on that exact element, so nothing would route
+      // to it again without this (confirmed against a real running dsh
+      // instance: cancelling a ':' command left Normal mode keyboard-dead).
+      // Session mode needs no equivalent — its keydown handling is
+      // document-level, not focus-dependent.
+      const exit = (): void => {
+        mode.exitCommand()
+        if (flavor === 'normal') findComposerTextarea()?.focus()
+      }
       return (
-        <CommandPalette
-          flavor={state.commandFlavor ?? 'session'}
-          // No command vocabulary exists yet (see README "Known limitations")
-          // — this is the palette shell only; submitting just closes it.
-          onSubmit={() => { mode.exitCommand() }}
-          onCancel={() => { mode.exitCommand() }}
-        />
+        <>
+          {modeIndicator}
+          <CommandPalette
+            flavor={flavor}
+            // No command vocabulary exists yet (see README "Known limitations")
+            // — this is the palette shell only; submitting just closes it.
+            onSubmit={exit}
+            onCancel={exit}
+          />
+        </>
       )
     }
 
-    if (state.mode !== 'session') return null
-    return <HighlightOverlay target={rows[index]?.element ?? null} />
+    if (state.mode !== 'session') return modeIndicator
+    return (
+      <>
+        {modeIndicator}
+        <HighlightOverlay target={rows[index]?.element ?? null} />
+      </>
+    )
   }
 }
