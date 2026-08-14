@@ -27,7 +27,6 @@ function deriveMode(vimState: { insertMode: boolean; visualMode: boolean; visual
 /** A headless CodeMirror 6 + codemirror-vim instance implementing {@link VimEngine}. */
 export class CodeMirrorVimEngine implements VimEngine {
   private readonly view: EditorView
-  private readonly cm: CodeMirror
   private readonly extensions: readonly Extension[]
   private readonly changeListeners = new Set<(next: { text: string; sel: TextSelection }) => void>()
   private readonly modeListeners = new Set<(mode: VimEngine['mode']) => void>()
@@ -37,10 +36,22 @@ export class CodeMirrorVimEngine implements VimEngine {
     this.extensions = [vim(), ...extraExtensions]
     const state = EditorState.create({ doc: '', extensions: this.extensions })
     this.view = new EditorView({ state }) // intentionally never appended to `document`
-    const cm = getCM(this.view)
-    if (cm === null) throw new Error('dsh-vim-keymap: @replit/codemirror-vim did not attach to the shadow EditorView')
-    this.cm = cm
+    if (this.cm() === null) throw new Error('dsh-vim-keymap: @replit/codemirror-vim did not attach to the shadow EditorView')
     this.lastMode = this.readMode()
+  }
+
+  /**
+   * Re-fetched on every read, never cached: `getCM` returns `view.cm`, a
+   * property the vim ViewPlugin sets on the (stable) `EditorView` instance
+   * itself. `EditorView.setState` — which `syncFromHost` calls on every
+   * Normal-mode entry — destroys and reconstructs every ViewPlugin, so a
+   * `cm` reference taken before that point is stale and its `.state` reads
+   * back `null` (confirmed against a real browser, not jsdom: `cm.state.vim`
+   * read `null` after the first `syncFromHost`, which `readMode()` then
+   * misreported as 'insert').
+   */
+  private cm(): CodeMirror | null {
+    return getCM(this.view)
   }
 
   get mode(): VimEngine['mode'] {
@@ -117,7 +128,8 @@ export class CodeMirrorVimEngine implements VimEngine {
   }
 
   private readMode(): VimEngine['mode'] {
-    const vimState = this.cm.state.vim
+    const cm = this.cm()
+    const vimState = cm === null ? null : cm.state.vim
     return vimState === null || vimState === undefined ? 'insert' : deriveMode(vimState)
   }
 }

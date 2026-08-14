@@ -77,4 +77,26 @@ describe('attachTextareaAdapter (real host keydown -> shadow engine)', () => {
     engine.destroy()
     textarea.remove()
   })
+
+  it('never hijacks Escape while a CJK/IME composition is in progress', () => {
+    const textarea = document.createElement('textarea')
+    textarea.value = ''
+    document.body.appendChild(textarea)
+
+    const engine = new CodeMirrorVimEngine()
+    const mode = new ModeMachine()
+    const setDraft = vi.fn()
+    const adapter = attachTextareaAdapter({ textarea, engine, mode, inputActions: { setDraft } })
+
+    let sawDefaultPrevented = false
+    textarea.addEventListener('keydown', (e) => { sawDefaultPrevented = e.defaultPrevented })
+    press(textarea, { key: 'Escape', isComposing: true })
+
+    expect(sawDefaultPrevented).toBe(false) // the IME must be able to cancel its own composition
+    expect(mode.current.mode).toBe('insert') // must not have entered Normal mode
+
+    adapter.dispose()
+    engine.destroy()
+    textarea.remove()
+  })
 })

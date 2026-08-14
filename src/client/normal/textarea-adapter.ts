@@ -73,6 +73,11 @@ export function attachTextareaAdapter(options: TextareaAdapterOptions): Textarea
     // shortcut working while Normal mode is active; without this, the
     // unconditional preventDefault below swallowed all of them.
     if (e.metaKey) return
+    // A CJK/IME composition in progress owns Escape itself (cancels the
+    // composition) and every other key (candidate selection) — stealing it
+    // here would break composing Chinese/Japanese/Korean text in Insert mode,
+    // the one case this adapter must never touch.
+    if (e.isComposing) return
     const current = mode.current.mode
     if (current === 'insert') {
       if (e.key === 'Escape' && !e.shiftKey) {

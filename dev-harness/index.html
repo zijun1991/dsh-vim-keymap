@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>dsh-vim-keymap dev harness</title>
+</head>
+<body style="margin:0;">
+  <div id="mode-badge" style="position:fixed;top:8px;right:8px;z-index:2147483002;background:#111;color:#0f0;font-family:monospace;font-size:12px;padding:4px 10px;border-radius:4px;">mode: insert</div>
+  <main style="max-width:640px;margin:48px auto;font-family:sans-serif;">
+    <h1 style="font-size:16px;">dsh-vim-keymap dev harness</h1>
+    <p style="color:#666;font-size:13px;">Manual real-browser verification only — see dev-harness/README.md.</p>
+
+    <div data-composer-card style="border:1px solid #ccc;border-radius:6px;padding:8px;">
+      <textarea id="composer" rows="6" style="width:100%;box-sizing:border-box;font-family:monospace;font-size:14px;border:none;outline:none;resize:vertical;" placeholder="Insert mode: type here. Esc -> Normal. Shift+Esc -> Session."></textarea>
+    </div>
+
+    <h2 style="font-size:13px;color:#666;margin-top:24px;">workspace tree (role=tree / treeitem / aria-expanded, mirrors ui-workspace)</h2>
+    <div role="tree" id="tree" style="border:1px solid #ccc;border-radius:6px;padding:8px;font-size:14px;position:relative;">
+      <div role="treeitem" aria-expanded="true" class="row group" data-group="a" tabindex="-1">
+        Workspace A
+        <button data-action="menu" style="float:right;">...</button>
+      </div>
+      <div role="treeitem" aria-expanded="false" class="row group" data-group="b" tabindex="-1">Workspace B</div>
+      <button role="treeitem" class="row search-result" style="display:block;width:100%;text-align:left;background:none;border:none;font:inherit;padding:2px 0;">search result X</button>
+    </div>
+    <div id="activated-log" style="margin-top:8px;font-size:12px;color:#888;">activated: (none yet)</div>
+
+    <div id="overlay-mount"></div>
+  </main>
+  <script type="module" src="/main.ts"></script>
+</body>
+</html>
