@@ -1,7 +1,6 @@
 {
   "name": "dsh-vim-keymap",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
   "description": "Vim keybindings for the deepseek-harness Web GUI, mounted as an out-of-tree Cordis plugin.",
   "license": "MIT",
