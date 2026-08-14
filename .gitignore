@@ -1,0 +1,7 @@
+node_modules/
+lib/
+*.log
+.DS_Store
+
+# Local Claude Code artifacts — never committed, CLAUDE.md itself is the one exception.
+.claude/
