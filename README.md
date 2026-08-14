@@ -1,18 +1,42 @@
 # dsh-vim-keymap
 
+**English** | [中文](README.zh.md)
+
 Vim keybindings for the [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) Web GUI, shipped as an independent, out-of-tree Cordis plugin — it never modifies deepseek-harness itself.
+
+## Scope: vim-style keyboard assist, not a vim reimplementation
+
+The goal here is narrow on purpose: let the composer and session tree be
+driven from the keyboard the way vim habits already know, not reproduce vim
+itself. The actual work in a deepseek-harness session — writing, editing,
+searching, running things — is carried out by the agent, not by a human
+doing character-by-character text manipulation the way a real vim session
+assumes; investing in vim's full surface (registers, macros, marks,
+jumplists, custom text objects, a real ex-command language) would spend
+effort on capability nobody using this plugin is positioned to exercise.
+
+So new behavior gets added when it removes a specific, concrete keyboard
+friction — Shift+Esc needing to reach Session mode even when focus has
+drifted off the composer, a double-tapped Escape as a way back in when
+nothing else is listening, one `save` command that replaces a mouse click on
+the host's "Session log" button — not to chase feature parity with a
+`.vimrc`-grade vim setup. Normal mode's text editing stays exactly what
+`@replit/codemirror-vim` ships out of the box, unextended; Command mode's
+vocabulary staying at one command (see "Known limitations" below) is this
+principle in practice, not an oversight.
 
 ## Modes
 
 ```
 Insert (default, composer textarea)
   Esc            -> Normal
-  Shift+Esc      -> Session
-  Enter          -> newline (untouched)
-  Cmd/Alt+Enter  -> send (untouched)
+  Shift+Esc      -> Session (works from ANY focus/mode state — see below)
+  Enter          -> newline (this plugin enforces it — see below)
+  Cmd/Alt+Enter  -> send (untouched; Cmd/Alt is what tells it apart from a bare Enter)
+  Esc Esc        -> (rescue) force Insert + refocus the composer, from ANY mode/focus state
 
 Normal (real vim text editing, inside the composer textarea)
-  Shift+Esc      -> Session (same shortcut and target as Insert's)
+  j/k            -> move one line up/down (real line motion, not visual-wrap)
   :              -> Command (normal flavor)
   i/a/o/...      -> Insert
 
@@ -35,11 +59,65 @@ shows which of the four modes is live — the only visual cue for it, since
 nothing in the host UI otherwise indicates vim state. Its display policy —
 `'persistent'` (always shown, the default), `'on-change'` (shown for ~1.2s
 after a transition, then hidden), or `'hidden'` — and the `enterNormal`/
-`enterSession` shortcuts themselves (default `Escape`/`Shift+Escape`;
-`enterSession` fires from both Insert and Normal) are all
+`enterSession` shortcuts themselves (default `Escape`/`Shift+Escape`) are all
 user-editable through a "Vim Keymap" card this plugin registers into
 Settings → Plugins → Plugin configuration, backed by `localStorage` (see
 "Settings persistence" below for why not the Host settings document).
+`enterSession` is a global shortcut, not scoped to the composer having focus
+— see below.
+
+The Enter/send convention is enforced, not left to the host's own default:
+confirmed against a real running `dsh --profile web` instance that the
+host's own bubble-phase handler treats a bare Enter as "send" by default,
+the opposite of this plugin's agreed convention. `textarea-adapter.ts`
+intercepts a bare Enter in Insert mode — `preventDefault()` (relying on the
+browser's own native newline-insertion default silently did nothing; some
+handler upstream of this listener already calls `preventDefault()` on a
+bare Enter) and inserts the `'\n'` itself through `inputActions.setDraft()`
+— while the platform send combo (Cmd+Enter on Mac, Alt+Enter elsewhere)
+passes through completely untouched.
+
+`enterSession` (Shift+Escape by default) is handled as a global,
+focus-independent keydown listener in `RootOverlay.tsx`, not scoped to the
+composer textarea the way `enterNormal` is: unlike entering Normal mode,
+which inherently needs the textarea focused (it means "vim-edit THIS text
+field"), jumping to Session has no such requirement. It used to live in
+`textarea-adapter.ts` alongside `enterNormal`, which meant it silently did
+nothing whenever focus had drifted away from the composer — confirmed
+against a real running dsh instance — the same class of problem the
+double-Escape rescue below exists for.
+
+The double-Escape rescue (`RootOverlay.tsx`) exists because every other
+keydown listener this plugin installs is scoped to somewhere specific — the
+composer textarea for Insert/Normal, the document but only while Session is
+current — so if browser focus drifts anywhere else (a host button, nothing
+in particular), NOTHING is listening for Escape and there is no keyboard way
+back in short of clicking the composer by hand. A quick double-tap of a bare
+Escape always works regardless of current mode or focus target, forcing
+Insert and refocusing the composer.
+
+Normal mode's `j`/`k` move one real line at a time, which needs the shadow
+`EditorView` connected to the actual rendered document: CodeMirror computes
+`j`/`k` motion from real pixel line heights/positions, and a view that's
+never appended anywhere reads every line as zero-height — confirmed against
+a real running dsh instance with genuine multi-line text that this
+degenerated into jumping straight between the document's first and last
+line instead of moving one at a time. `engine.ts`'s constructor now appends
+the view into an `aria-hidden`, `visibility: hidden`, off-screen host div —
+genuinely laid out, but never visible, focusable, or reachable by a screen
+reader — instead of leaving it fully detached.
+
+Entering Normal mode also clamps the caret the same way real vim does:
+pressing Esc right after typing (the common case, caret sitting one past the
+last character of a line) pulls it back onto that character rather than
+leaving it at an Insert-only position with no further rightward motion
+possible — confirmed against a real running dsh instance that this doesn't
+happen for free. `@replit/codemirror-vim` only applies that clamp as part of
+handling a real "leave insert mode" keystroke; `syncFromHost` never
+dispatches one (it replaces the document/selection directly via
+`EditorState.create`), so `engine.ts`'s `clampToNormalModeCaret` does it
+explicitly, and `textarea-adapter.ts` reads the corrected position back onto
+the host textarea (nothing else does, unlike every later onChange-driven edit).
 
 ## Why this never touches deepseek-harness
 
@@ -96,8 +174,8 @@ methods — bound once at construction, safe to pass around bare.
 
 ## Known limitations / follow-up work
 
-- **Command mode's vocabulary has exactly one command: `save` (normal flavor only).** It clicks the host's own "Session log" button (the closest existing UI affordance to "save this session" — there is no `InputActions`/`SessionInput` verb for it; see `src/client/session/session-log-bridge.ts`), matched by that button's visible text since it carries no `aria-label` and its CSS class is build-hashed. Everything else about the palette is still shell only (portal mount, flavor-specific styling, submit/cancel keys) — session-flavor commands and a richer normal-flavor vocabulary are separate, product-facing work.
-- **`focusSearch()` drives the real session-search input**, confirmed against a real running `dsh --profile web` instance: `ui-workspace`'s `WorkspaceBrowser.tsx` renders it as a plain, always-present `<input type="text">` with no distinguishing `aria-label`/stable class, expanding purely off its own focus/blur (no separate "expand" click needed). The one other `<input type="text">` seen on screen — the rename-workspace dialog's name field — only exists while that dialog's `role="dialog"` wrapper is mounted, which is what `src/client/workspace/tree-bridge.ts` excludes on to tell the two apart.
+- **Command mode's vocabulary has exactly one command: `save` (normal flavor only).** It clicks the host's own "Session log" button (the closest existing UI affordance to "save this session" — there is no `InputActions`/`SessionInput` verb for it; see `src/client/session/session-log-bridge.ts`), matched by that button's visible text since it carries no `aria-label` and its CSS class is build-hashed. Everything else about the palette is still shell only (portal mount, flavor-specific styling, submit/cancel keys) — this is deliberate scope, not an oversight (see "Scope" above): a session-flavor command or a richer normal-flavor vocabulary is separate, concrete-need-driven work, not growth toward a "complete" vim command set.
+- **`focusSearch()` drives the real session-search input**, confirmed against a real running `dsh --profile web` instance: `ui-workspace`'s `WorkspaceBrowser.tsx` renders it as a plain, always-present `<input type="text">` with no distinguishing `aria-label`/stable class, starting visually collapsed (`opacity: 0`, `pointer-events: none`) until its sibling toggle button is clicked — a bare `.focus()` alone does nothing (confirmed live after an earlier false positive from a stale prior click), so `src/client/workspace/tree-bridge.ts` clicks that toggle (found structurally, as the input's only sibling carrying `aria-expanded` — locale/build-independent, unlike its Chinese `aria-label`) before focusing. The one other `<input type="text">` seen on screen — the rename-workspace dialog's name field — only exists while that dialog's `role="dialog"` wrapper is mounted, which is what tells the two apart.
 - **`enterNormal`/`enterSession` are now user-editable** through the "Vim Keymap" settings card, backed by a small key-combo parser (`src/key-combo.ts`) that matches strings like `"Shift+Escape"` against a live `KeyboardEvent`. The `submit` constant that used to sit alongside them in `src/config.ts` was dropped rather than carried forward: this plugin never intercepts the host's own send shortcut (see the Modes diagram above — "untouched"), so a setting for it could never have done anything; `src/config.ts` itself was dead code (nothing imported it) and was deleted once `src/settings.ts` became the real, live-editable source of truth for these defaults.
 - **`@deepseek-ai/dsh-client-*`'s `latest` npm dist-tag is currently broken** (`0.0.1-rc.1` depends on `@deepseek-ai/dsh-compact`, `@deepseek-ai/dsh-client-ui-slash`, and `@deepseek-ai/dsh-type-meta`, none of which are published) — this repo pins the `next` dist-tag (`0.1.0-rc.6`) instead, which resolves cleanly. Worth reporting upstream.
 
