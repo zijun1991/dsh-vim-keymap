@@ -12,6 +12,18 @@ import { ModeMachine } from '../lib/mode-machine.js'
 import { CodeMirrorVimEngine } from '../lib/client/normal/engine.js'
 import { attachTextareaAdapter } from '../lib/client/normal/textarea-adapter.js'
 import { createRootOverlay } from '../lib/client/overlay/RootOverlay.js'
+import { LocalKeymapSettingsStore } from '../lib/client/settings/local-store.js'
+import { createVimKeymapSettingsCard } from '../lib/client/settings/VimKeymapSettingsCard.js'
+import { en } from '../lib/client/settings/locales.js'
+
+// The settings card persists to real `localStorage` — this IS a real
+// browser, so no mock is needed here (unlike the old Host-`SettingsScope`
+// design this replaced, which needed a fake to stand in for a running dsh).
+const settings = new LocalKeymapSettingsStore()
+// The real `t` prop is framework-injected via `locale:` at slot registration
+// (see client/index.ts) — no such framework exists here, so the harness
+// just reads the English dictionary directly.
+const t = (key: keyof typeof en): string => en[key]
 
 const mode = new ModeMachine()
 const badge = document.getElementById('mode-badge')
@@ -61,7 +73,7 @@ function setExpanded(row: HTMLElement, expanded: boolean): void {
     div.className = 'row session'
     div.dataset.group = group
     div.tabIndex = -1
-    div.textContent = `  ${label}`
+    div.textContent = `  ${label}`
     after.after(div)
     after = div
   }
@@ -86,8 +98,14 @@ tree.addEventListener('click', (e) => {
 // ── mount the real RootOverlay (Session highlight + Command palette) ──────
 const mount = document.getElementById('overlay-mount')
 if (mount === null) throw new Error('dev-harness: #overlay-mount missing')
-const RootOverlay = createRootOverlay(mode)
+const RootOverlay = createRootOverlay(mode, settings)
 createRoot(mount).render(createElement(RootOverlay))
 
-// exposed for the chrome-devtools MCP harness to poke at directly
-Object.assign(window, { __mode: mode, __adapter: adapter, __engine: engine })
+// ── mount the real settings.plugin.item card against the same store ───────
+const settingsMount = document.getElementById('settings-mount')
+if (settingsMount === null) throw new Error('dev-harness: #settings-mount missing')
+const VimKeymapSettingsCard = createVimKeymapSettingsCard(settings)
+createRoot(settingsMount).render(createElement(VimKeymapSettingsCard, { t }))
+
+// exposed for browser-driven manual poking
+Object.assign(window, { __mode: mode, __adapter: adapter, __engine: engine, __settings: settings })

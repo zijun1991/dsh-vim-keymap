@@ -28,9 +28,12 @@ Command (one global floating input, two visually distinct flavors)
 
 A small mode badge (bottom-right, non-interactive, reads `Vim Mode: <MODE>`)
 shows which of the four modes is live — the only visual cue for it, since
-nothing in the host UI otherwise indicates vim state. `KeymapConfig.modeIndicator` (`src/config.ts`) picks the
-display policy: `'persistent'` (always shown, the default), `'on-change'`
-(shown for ~1.2s after a transition, then hidden), or `'hidden'`.
+nothing in the host UI otherwise indicates vim state. Its display policy —
+`'persistent'` (always shown, the default), `'on-change'` (shown for ~1.2s
+after a transition, then hidden), or `'hidden'` — is user-editable through a
+"Vim Keymap" card this plugin registers into Settings → Plugins → Plugin
+configuration, backed by `localStorage` (see "Settings persistence" below for
+why not the Host settings document).
 
 ## Why this never touches deepseek-harness
 
@@ -40,6 +43,43 @@ Every integration point is either an existing, general-purpose extension point, 
 - **Session mode** never imports `ui-workspace` or its view store. It reads the workspace tree straight off the rendered, accessible DOM (`role="tree"`/`role="treeitem"`/`aria-expanded`) and drives fold/expand and row-open by dispatching real `click` events on the row elements — the same thing a mouse user does. `ui-workspace`'s internal store is never touched.
 - **Command mode** portals into `document.body`, and the whole plugin's global surface (the Session-mode overlay + Command palette + mode badge) registers into `shell.overlay`, the additive global-overlay slot `ui-layout` documents for exactly this purpose.
 - Both dynamically-declared slots (`conversation.session.header.actions`, scope `session`; `shell.overlay`, scope `root`) are reached through `ctx.slots.inject(key, factory)`, not a direct `ctx.slots.register(...)` call — confirmed against a real running `dsh --profile web` instance that a direct call races the owning plugin's own declaration and throws `slot "..." is not declared` (the boot graph's per-package `inject` metadata is informational, not an activation-order guarantee — see `packages/client/modules/src/client/manifest.ts`'s `WebBootEntry.inject` doc in deepseek-harness). `ctx.slots.inject` is the pattern `ui-jobs`/`ui-subagent`/`ui-agent-preset` already use for the same slot.
+
+## Settings persistence: `localStorage`, not the Host settings document
+
+The "Vim Keymap" card (`settings.plugin.item`, declared by
+`@deepseek-ai/dsh-client-ui-settings-plugins`) is a genuine public list slot —
+registering into it the same `ctx.slots.inject` way as the other two slots
+above works fine. A real `ctx.settings` registration for its one field (the
+mode-badge display policy) does not: confirmed against a real running `dsh
+--profile web` instance, writing through the registered namespace fails with
+
+```json
+{"error":{"code":"settings-not-exposed","message":"settings namespace \"dsh-vim-keymap\" is not exposed to configuration clients"}}
+```
+
+The root cause is `packages/host/apiproxy/src/api-proxy.ts`'s
+`WEB_SETTINGS_NAMESPACES` — a hardcoded allowlist the Host gateway checks on
+every settings read/write, independent of whether the owning plugin ever
+registered a schema. That file's own comment names this as a known gap:
+extending the allowlist via each plugin's own `settings.register()` call,
+so a plugin could expose its own configuration without a change to that
+package, is undone "deferred work". Until upstream does that, there is no
+extension point a plugin can use, and editing that allowlist directly would
+be editing deepseek-harness itself — the one thing this plugin never does.
+
+So `src/client/settings/local-store.ts` persists to `localStorage` instead:
+plain, synchronous, no Host round-trip, no allowlist. The card's copy says so
+explicitly ("Saved in this browser only, not synced with your account.")
+rather than implying Host-document persistence it cannot deliver.
+
+While this was still wired to the real `SettingsScope`, `useSyncExternalStore(settings.subscribe, settings.getSnapshot)`
+crashed with `Cannot read properties of undefined (reading 'store')` — the
+real controller's `getSnapshot`/`subscribe` are ordinary prototype methods,
+and passing them as bare references extracts them from `this`. A dev-harness
+mock scope built as a plain object of closures never caught this (no `this`
+to lose), which is why `LocalKeymapSettingsStore` deliberately defines
+`getSnapshot`/`subscribe` as arrow-function class fields instead of ordinary
+methods — bound once at construction, safe to pass around bare.
 
 ## Client bundle format
 
@@ -51,7 +91,7 @@ Every integration point is either an existing, general-purpose extension point, 
 
 - **Command mode has no command vocabulary yet.** It is the palette shell only (portal mount, flavor-specific styling, submit/cancel keys) — submitting a typed command currently just closes the palette without acting on it. Designing the actual `normal`/`session` command sets is separate, product-facing work.
 - **`focusSearch()` is a stub.** `ui-workspace`'s `WorkspaceBrowser.tsx` renders at least three `<input type="text">` elements (rename dialog, workspace-path field, session search); a real-browser check is needed to find a selector that reliably picks the search box and not, say, an open rename dialog.
-- **Shortcuts and the mode-indicator display policy are hardcoded constants (`src/config.ts`), not wired to `ctx.settings`.** Wiring live, user-editable values needs the Node-side `@deepseek-ai/dsh-settings` registration plus the browser-side `SettingsScope` binding (`dsh-client-runtime`'s `contract/settings-scope.ts`) — deferred rather than guessed at, tracked as its own follow-up.
+- **Shortcuts (`enterNormal`/`enterSession`/`submit` in `src/config.ts`) are still hardcoded constants, not user-editable.** The mode-indicator display policy no longer has this limitation — it is wired to the "Vim Keymap" settings card (see "Settings persistence" above). Making the shortcuts themselves configurable needs a key-combo parser (matching strings like `"Shift+Escape"` against a live `KeyboardEvent`) that does not exist yet; deferred as separate, larger work rather than guessed at.
 - **`@deepseek-ai/dsh-client-*`'s `latest` npm dist-tag is currently broken** (`0.0.1-rc.1` depends on `@deepseek-ai/dsh-compact`, `@deepseek-ai/dsh-client-ui-slash`, and `@deepseek-ai/dsh-type-meta`, none of which are published) — this repo pins the `next` dist-tag (`0.1.0-rc.6`) instead, which resolves cleanly. Worth reporting upstream.
 - **Real human IME composition is still unverified.** `e.isComposing` bypasses are unit-tested and the logic is sound, but a genuine OS IME session needs a human at a keyboard — automated browser tools cannot drive one.
 
@@ -75,7 +115,7 @@ pnpm run dev:harness
 
 ### Real dsh verification
 
-This has been exercised against a real running `dsh --profile web` instance (all four modes, confirmed in a real browser, not assumed). To do the same:
+This has been exercised against a real running `dsh --profile web` instance (all four modes and the settings card, confirmed in a real browser, not assumed). To do the same:
 
 1. `pnpm run build` (must include the `tsdown` step — the plain `tsc` output alone is not a servable client bundle; see "Client bundle format" above).
 2. Pick a `dsh` home — a scratch one is safer than your real `~/.dsh` (`export DSH_HOME=/path/to/scratch`), then run `dsh --profile web --help` once to auto-initialize `$DSH_HOME/profiles/web/`.

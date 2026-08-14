@@ -1,14 +1,14 @@
 /**
  * Shortcut defaults. v1 ships these as plain constants rather than wiring
- * `ctx.settings` end-to-end (Node-side registration + the browser-side
- * `SettingsScope` binding) — that integration needs its own verification pass
- * and is tracked as follow-up work, not skipped silently (see README.md).
+ * `ctx.settings` end-to-end — that integration needs its own verification
+ * pass and is tracked as follow-up work, not skipped silently (see
+ * README.md). The mode-badge display policy below is the one field that
+ * IS wired end-to-end; see src/settings.ts and src/client/settings/.
  */
-/**
- * Mode-badge display policy: always shown, shown only for a moment after a
- * transition, or never shown.
- */
-export type ModeIndicatorDisplay = 'persistent' | 'on-change' | 'hidden'
+import { DEFAULT_VIM_KEYMAP_SETTINGS } from './settings.js'
+import type { ModeIndicatorDisplay } from './settings.js'
+
+export type { ModeIndicatorDisplay }
 
 export interface KeymapConfig {
   /** Enters vim Normal mode from Insert. */
@@ -17,7 +17,7 @@ export interface KeymapConfig {
   readonly enterSession: string
   /** Sends the message from Insert mode. */
   readonly submit: string
-  /** Mode-badge display policy (see {@link ModeIndicatorDisplay}). */
+  /** Mode-badge display policy (see {@link ModeIndicatorDisplay}); live-configurable, see src/settings.ts. */
   readonly modeIndicator: ModeIndicatorDisplay
 }
 
@@ -27,5 +27,5 @@ export const DEFAULT_KEYMAP_CONFIG: KeymapConfig = {
   enterNormal: 'Escape',
   enterSession: 'Shift+Escape',
   submit: isMac ? 'Meta+Enter' : 'Alt+Enter',
-  modeIndicator: 'persistent',
+  modeIndicator: DEFAULT_VIM_KEYMAP_SETTINGS.modeIndicator,
 }

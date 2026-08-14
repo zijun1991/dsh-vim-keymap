@@ -2,16 +2,17 @@
  * Always-portal-mounted mode badge — the one visual cue the user has for
  * which of the four modes is live (nothing else in the host UI shows it:
  * there is no real cursor-shape/statusline convention to piggyback on).
- * Display policy is `KeymapConfig.modeIndicator`: 'persistent' (always
- * shown), 'on-change' (shown for {@link ON_CHANGE_VISIBLE_MS} after a
- * transition, then hidden), or 'hidden'. Not yet wired to `ctx.settings`
- * (see README.md "Known limitations" — same deferred-settings status as the
- * shortcut config it lives beside).
+ * Display policy is read live from `LocalKeymapSettingsStore` (browser
+ * `localStorage`, not the Host settings document — see local-store.ts for
+ * why): 'persistent' (always shown), 'on-change' (shown for
+ * {@link ON_CHANGE_VISIBLE_MS} after a transition, then hidden), or 'hidden'.
+ * Editable through the settings card this plugin registers into
+ * `settings.plugin.item` (src/client/settings/VimKeymapSettingsCard.tsx).
  */
 import { createPortal } from 'react-dom'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ModeMachine, ModeState } from '../../mode-machine.js'
-import type { ModeIndicatorDisplay } from '../../config.js'
+import type { LocalKeymapSettingsStore } from '../settings/local-store.js'
 
 const MODE_LABEL: Record<ModeState['mode'], string> = {
   insert: 'INSERT',
@@ -32,15 +33,24 @@ const ON_CHANGE_VISIBLE_MS = 1200
 
 export interface ModeIndicatorProps {
   readonly mode: ModeMachine
-  readonly display: ModeIndicatorDisplay
+  readonly settings: LocalKeymapSettingsStore
 }
 
-export function ModeIndicator({ mode, display }: ModeIndicatorProps): React.JSX.Element | null {
+export function ModeIndicator({ mode, settings }: ModeIndicatorProps): React.JSX.Element | null {
   const [state, setState] = useState(mode.current)
-  // 'persistent' starts (and stays) visible; 'on-change' starts hidden until
-  // the first real transition; 'hidden' never reads this at all (early return below).
+  const snapshot = useSyncExternalStore(settings.subscribe, settings.getSnapshot)
+  const display = snapshot.modeIndicator
   const [visible, setVisible] = useState(display === 'persistent')
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
+  // The policy itself can change live (the settings card writes it): a
+  // switch into 'persistent'/'hidden' takes effect immediately; a switch
+  // into 'on-change' starts hidden until the next transition, same as if
+  // the plugin had booted with that policy.
+  useEffect(() => {
+    if (display === 'on-change') { setVisible(false); return }
+    setVisible(display === 'persistent')
+  }, [display])
 
   useEffect(() => mode.onChange((next) => {
     setState(next)

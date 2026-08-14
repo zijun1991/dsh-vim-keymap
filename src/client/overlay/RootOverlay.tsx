@@ -10,15 +10,23 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ModeMachine } from '../../mode-machine.js'
 import type { TreeRow } from '../../bridge/contract.js'
-import { DEFAULT_KEYMAP_CONFIG } from '../../config.js'
+import type { LocalKeymapSettingsStore } from '../settings/local-store.js'
 import { createWorkspaceTreeBridge } from '../workspace/tree-bridge.js'
 import { findComposerTextarea } from '../normal/textarea-adapter.js'
 import { HighlightOverlay } from './HighlightOverlay.js'
 import { CommandPalette } from './CommandPalette.js'
 import { ModeIndicator } from './ModeIndicator.js'
 
-/** @returns a component to register into `shell.overlay`. */
-export function createRootOverlay(mode: ModeMachine): () => React.JSX.Element | null {
+/**
+ * @param mode - the plugin-wide mode singleton.
+ * @param settings - the local-storage-backed settings store, threaded down
+ * to {@link ModeIndicator} for the live display-policy read.
+ * @returns a component to register into `shell.overlay`.
+ */
+export function createRootOverlay(
+  mode: ModeMachine,
+  settings: LocalKeymapSettingsStore,
+): () => React.JSX.Element | null {
   return function RootOverlay(): React.JSX.Element | null {
     const [state, setState] = useState(mode.current)
     const [rows, setRows] = useState<readonly TreeRow[]>([])
@@ -97,7 +105,7 @@ export function createRootOverlay(mode: ModeMachine): () => React.JSX.Element | 
       return () => { document.removeEventListener('keydown', onKeyDown, { capture: true }) }
     }, [state.mode])
 
-    const modeIndicator = <ModeIndicator mode={mode} display={DEFAULT_KEYMAP_CONFIG.modeIndicator} />
+    const modeIndicator = <ModeIndicator mode={mode} settings={settings} />
 
     if (state.mode === 'command') {
       const flavor = state.commandFlavor ?? 'session'

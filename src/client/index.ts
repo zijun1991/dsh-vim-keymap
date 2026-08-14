@@ -1,24 +1,43 @@
 /**
  * Browser entry: registers the Normal-mode bridge (session-scoped, into
- * `conversation.session.header.actions`) and the Session/Command overlay
- * (root-scoped, into `shell.overlay`). One `ModeMachine` instance is shared
- * between them by closure — see the module docs on each factory for why
- * neither slot can carry it as an owner prop.
+ * `conversation.session.header.actions`), the Session/Command overlay
+ * (root-scoped, into `shell.overlay`), and this plugin's settings card
+ * (root-scoped, into `settings.plugin.item`). One `ModeMachine` instance is
+ * shared between the first two by closure — see the module docs on each
+ * factory for why neither slot can carry it as an owner prop. The settings
+ * store is likewise shared by closure between the overlay (which reads the
+ * mode-badge display policy) and the card (which writes it).
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
-// Type-only: pulls in the SlotMap augmentations these two packages declare
+// Type-only: pulls in the SlotMap augmentations these packages declare
 // ('conversation.session.header.actions' + its SessionStandardProps merge,
-// and 'shell.overlay') — nothing here is otherwise used by name.
+// 'shell.overlay', and 'settings.plugin.item') — nothing here is otherwise
+// used by name.
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
+// Type-only: the ctx.locale Context merge.
+import type {} from '@deepseek-ai/dsh-client-locale/client'
 import { ModeMachine } from '../mode-machine.js'
 import { createNormalModeSlot } from './normal/slot.js'
 import { createRootOverlay } from './overlay/RootOverlay.js'
+import { LocalKeymapSettingsStore } from './settings/local-store.js'
+import { createVimKeymapSettingsCard } from './settings/VimKeymapSettingsCard.js'
+import { VIM_KEYMAP_SETTINGS_LOCALE_NS, en, zh } from './settings/locales.js'
 
-export const inject = ['slots']
+export const inject = ['slots', 'locale']
 
 export function apply(ctx: ClientContext): void {
   const mode = new ModeMachine()
+  const settings = new LocalKeymapSettingsStore()
+
+  // Only the settings card's copy is bilingual — it sits among the Host's own
+  // zh/en cards; the mode badge and Command palette stay hardcoded English
+  // (see locales.ts).
+  ctx.effect(
+    () => ctx.locale.register(VIM_KEYMAP_SETTINGS_LOCALE_NS, { zh, en }),
+    'dsh-vim-keymap: settings card dictionaries',
+  )
 
   // Both targets are declared by another plugin's own register() call
   // (session-scoped 'conversation.session.header.actions' by a session's
@@ -39,6 +58,11 @@ export function apply(ctx: ClientContext): void {
 
   ctx.slots.inject('shell.overlay', () => ctx.slots.register(
     { name: 'shell.overlay', id: 'dsh-vim-keymap-overlay' },
-    createRootOverlay(mode),
+    createRootOverlay(mode, settings),
+  ))
+
+  ctx.slots.inject('settings.plugin.item', () => ctx.slots.register(
+    { name: 'settings.plugin.item', id: 'dsh-vim-keymap-settings', order: 100, locale: VIM_KEYMAP_SETTINGS_LOCALE_NS },
+    createVimKeymapSettingsCard(settings),
   ))
 }
