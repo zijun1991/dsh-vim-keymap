@@ -60,7 +60,7 @@ export function ModeIndicator({ mode, display }: ModeIndicatorProps): React.JSX.
       aria-hidden
       style={{
         position: 'fixed',
-        top: 12,
+        bottom: 12,
         right: 12,
         zIndex: 2147483002,
         pointerEvents: 'none',
@@ -75,7 +75,7 @@ export function ModeIndicator({ mode, display }: ModeIndicatorProps): React.JSX.
         border: `1px solid ${accent}`,
       }}
     >
-      {MODE_LABEL[state.mode]}
+      Vim Mode: {MODE_LABEL[state.mode]}
     </div>,
     document.body,
   )

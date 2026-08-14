@@ -26,9 +26,9 @@ Session (workspace/session tree navigation, not text)
 Command (one global floating input, two visually distinct flavors)
 ```
 
-A small mode badge (top-right, non-interactive) shows which of the four modes
-is live — the only visual cue for it, since nothing in the host UI otherwise
-indicates vim state. `KeymapConfig.modeIndicator` (`src/config.ts`) picks the
+A small mode badge (bottom-right, non-interactive, reads `Vim Mode: <MODE>`)
+shows which of the four modes is live — the only visual cue for it, since
+nothing in the host UI otherwise indicates vim state. `KeymapConfig.modeIndicator` (`src/config.ts`) picks the
 display policy: `'persistent'` (always shown, the default), `'on-change'`
 (shown for ~1.2s after a transition, then hidden), or `'hidden'`.
 
