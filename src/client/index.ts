@@ -5,8 +5,9 @@
  * (root-scoped, into `settings.plugin.item`). One `ModeMachine` instance is
  * shared between the first two by closure — see the module docs on each
  * factory for why neither slot can carry it as an owner prop. The settings
- * store is likewise shared by closure between the overlay (which reads the
- * mode-badge display policy) and the card (which writes it).
+ * store is likewise shared by closure between the Normal-mode bridge and the
+ * overlay (which read the mode-entry shortcuts and mode-badge display policy,
+ * respectively) and the card (which writes both).
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: pulls in the SlotMap augmentations these packages declare
@@ -53,7 +54,7 @@ export function apply(ctx: ClientContext): void {
   // declaration, re-registers on every redeclare, and tears down on collapse.
   ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register(
     { name: 'conversation.session.header.actions', id: 'dsh-vim-keymap-normal-bridge' },
-    createNormalModeSlot(mode),
+    createNormalModeSlot(mode, settings),
   ))
 
   ctx.slots.inject('shell.overlay', () => ctx.slots.register(

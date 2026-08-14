@@ -11,10 +11,16 @@
  * `settings-not-exposed` write failure with no upstream extension point
  * available; this file replaces that dead path entirely (see README.md).
  */
-import { DEFAULT_VIM_KEYMAP_SETTINGS, VIM_KEYMAP_SETTINGS_NAMESPACE } from '../../settings.js'
+import { formatKeyCombo, parseKeyCombo } from '../../key-combo.js'
+import { DEFAULT_VIM_KEYMAP_SETTINGS, MODE_INDICATOR_DISPLAYS, VIM_KEYMAP_SETTINGS_NAMESPACE } from '../../settings.js'
 import type { ModeIndicatorDisplay, VimKeymapSettings } from '../../settings.js'
 
 const STORAGE_KEY = `${VIM_KEYMAP_SETTINGS_NAMESPACE}:settings`
+
+/** A stored shortcut is only trusted if it still parses — see key-combo.ts. */
+function readShortcut(value: unknown, fallback: string): string {
+  return typeof value === 'string' && parseKeyCombo(value) !== null ? value : fallback
+}
 
 function readStored(): VimKeymapSettings {
   try {
@@ -22,11 +28,18 @@ function readStored(): VimKeymapSettings {
     if (raw === null) return DEFAULT_VIM_KEYMAP_SETTINGS
     const parsed: unknown = JSON.parse(raw)
     if (typeof parsed !== 'object' || parsed === null) return DEFAULT_VIM_KEYMAP_SETTINGS
-    const modeIndicator = (parsed as { modeIndicator?: unknown }).modeIndicator
-    if (modeIndicator !== 'persistent' && modeIndicator !== 'on-change' && modeIndicator !== 'hidden') {
-      return DEFAULT_VIM_KEYMAP_SETTINGS
+    const record = parsed as { modeIndicator?: unknown; enterNormal?: unknown; enterSession?: unknown }
+    // Each field falls back to its own default independently — a corrupt
+    // shortcut should not also discard an otherwise-valid modeIndicator, and
+    // vice versa.
+    const modeIndicator = (MODE_INDICATOR_DISPLAYS as readonly unknown[]).includes(record.modeIndicator)
+      ? record.modeIndicator as ModeIndicatorDisplay
+      : DEFAULT_VIM_KEYMAP_SETTINGS.modeIndicator
+    return {
+      modeIndicator,
+      enterNormal: readShortcut(record.enterNormal, DEFAULT_VIM_KEYMAP_SETTINGS.enterNormal),
+      enterSession: readShortcut(record.enterSession, DEFAULT_VIM_KEYMAP_SETTINGS.enterSession),
     }
-    return { modeIndicator }
     // A corrupt/foreign value at this key (hand-edited, or a future version's
     // shape) falls back to the default rather than throwing — this is a
     // cosmetic preference, not something worth breaking the plugin over.
@@ -64,7 +77,27 @@ export class LocalKeymapSettingsStore {
   }
 
   setModeIndicator(value: ModeIndicatorDisplay): void {
-    this.value = { ...this.value, modeIndicator: value }
+    this.write({ ...this.value, modeIndicator: value })
+  }
+
+  /** Sets the Insert -> Normal shortcut (stored in its canonical form); rejects (returns `false`, no write) a combo `key-combo.ts` cannot parse. */
+  setEnterNormal(value: string): boolean {
+    const combo = parseKeyCombo(value)
+    if (combo === null) return false
+    this.write({ ...this.value, enterNormal: formatKeyCombo(combo) })
+    return true
+  }
+
+  /** Sets the Insert/Normal -> Session shortcut (stored in its canonical form); rejects (returns `false`, no write) a combo `key-combo.ts` cannot parse. */
+  setEnterSession(value: string): boolean {
+    const combo = parseKeyCombo(value)
+    if (combo === null) return false
+    this.write({ ...this.value, enterSession: formatKeyCombo(combo) })
+    return true
+  }
+
+  private write(next: VimKeymapSettings): void {
+    this.value = next
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.value))
       // A write that throws (quota, private-browsing hardening) still keeps

@@ -13,6 +13,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { attachTextareaAdapter } from '../src/client/normal/textarea-adapter.ts'
 import { CodeMirrorVimEngine } from '../src/client/normal/engine.ts'
 import { ModeMachine } from '../src/mode-machine.ts'
+import { parseKeyCombo } from '../src/key-combo.ts'
 
 beforeAll(() => {
   if (typeof Range.prototype.getClientRects !== 'function') {
@@ -116,6 +117,62 @@ describe('attachTextareaAdapter (real host keydown -> shadow engine)', () => {
 
     expect(mode.current.mode).toBe('session')
     expect(document.activeElement).not.toBe(textarea)
+
+    adapter.dispose()
+    engine.destroy()
+    textarea.remove()
+  })
+
+  it('also blurs and enters Session on Shift+Escape from Normal mode, not just Insert', () => {
+    const textarea = document.createElement('textarea')
+    textarea.value = ''
+    document.body.appendChild(textarea)
+    textarea.focus()
+
+    const engine = new CodeMirrorVimEngine()
+    const mode = new ModeMachine()
+    const setDraft = vi.fn()
+    const adapter = attachTextareaAdapter({ textarea, engine, mode, inputActions: { setDraft } })
+
+    mode.enterNormal() // as the real Esc handler would do
+    engine.syncFromHost(textarea.value, { start: 0, end: 0 })
+    expect(mode.current.mode).toBe('normal')
+
+    press(textarea, { key: 'Escape', shiftKey: true })
+
+    expect(mode.current.mode).toBe('session')
+    expect(document.activeElement).not.toBe(textarea)
+
+    adapter.dispose()
+    engine.destroy()
+    textarea.remove()
+  })
+
+  it('honors a live-configured keymap instead of the Escape/Shift+Escape defaults', () => {
+    const textarea = document.createElement('textarea')
+    textarea.value = ''
+    document.body.appendChild(textarea)
+    textarea.focus()
+
+    const engine = new CodeMirrorVimEngine()
+    const mode = new ModeMachine()
+    const setDraft = vi.fn()
+    const enterNormal = parseKeyCombo('Ctrl+j')
+    const enterSession = parseKeyCombo('Ctrl+k')
+    if (enterNormal === null || enterSession === null) throw new Error('unreachable')
+    const keymap = { current: { enterNormal, enterSession } }
+    const adapter = attachTextareaAdapter({ textarea, engine, mode, inputActions: { setDraft }, keymap })
+
+    press(textarea, { key: 'Escape' }) // the default combo must no longer fire
+    expect(mode.current.mode).toBe('insert')
+
+    press(textarea, { key: 'j', ctrlKey: true })
+    expect(mode.current.mode).toBe('normal')
+
+    mode.enterInsert()
+    textarea.focus()
+    press(textarea, { key: 'k', ctrlKey: true })
+    expect(mode.current.mode).toBe('session')
 
     adapter.dispose()
     engine.destroy()

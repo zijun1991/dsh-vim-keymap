@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { ModeMachine } from '../src/mode-machine.ts'
 
 describe('ModeMachine', () => {
-  it('starts in insert and moves to normal/session only from insert', () => {
+  it('starts in insert; enterNormal only works from insert', () => {
     const m = new ModeMachine()
     expect(m.current.mode).toBe('insert')
 
@@ -11,6 +11,27 @@ describe('ModeMachine', () => {
 
     m.enterNormal() // no-op: not currently in insert
     expect(m.current.mode).toBe('session')
+  })
+
+  it('enterSession works from both insert and normal (the "jump to Session" shortcut is global to the textarea)', () => {
+    const m = new ModeMachine()
+    m.enterNormal()
+    expect(m.current.mode).toBe('normal')
+
+    m.enterSession()
+    expect(m.current.mode).toBe('session')
+  })
+
+  it('enterSession is a no-op from session/command', () => {
+    const m = new ModeMachine()
+    m.enterSession()
+    m.enterSession() // already session
+    expect(m.current.mode).toBe('session')
+
+    m.enterNormal() // still a no-op from session
+    m.enterCommand('session')
+    m.enterSession() // no-op from command
+    expect(m.current).toEqual({ mode: 'command', commandFlavor: 'session' })
   })
 
   it('session Esc goes straight to insert, never through normal', () => {

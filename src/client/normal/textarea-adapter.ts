@@ -1,13 +1,29 @@
 /**
  * Bridges a {@link VimEngine} to the real, unmodified composer `<textarea>`,
  * and owns every mode-entry key that fires while that textarea has focus
- * (Esc -> Normal, Shift+Esc -> Session). Installed as one capture-phase
+ * (Esc -> Normal from Insert; Shift+Esc -> Session from either Insert or
+ * Normal, by default — see {@link KeymapRef} for how the settings card
+ * overrides these live). Installed as one capture-phase
  * native keydown listener — InputBar's own bubble-phase React handler never
  * sees a key this adapter decides to own; every other key (plain typing, the
  * send shortcut, IME composition) is left completely alone.
  */
+import { matchesKeyCombo, parseKeyCombo } from '../../key-combo.js'
+import type { KeyCombo } from '../../key-combo.js'
+import { DEFAULT_VIM_KEYMAP_SETTINGS } from '../../settings.js'
 import type { ModeMachine } from '../../mode-machine.js'
 import type { VimEngine } from '../../bridge/contract.js'
+
+/** Live mode-entry shortcuts, re-read every keystroke via a mutable ref so a settings-card edit takes effect without recreating the adapter (mirrors RootOverlay.tsx's `indexRef` pattern). */
+export interface KeymapRef {
+  current: { enterNormal: KeyCombo; enterSession: KeyCombo }
+}
+
+// Non-null: DEFAULT_VIM_KEYMAP_SETTINGS's own combo strings are known-good constants.
+const DEFAULT_KEYMAP: KeymapRef['current'] = {
+  enterNormal: parseKeyCombo(DEFAULT_VIM_KEYMAP_SETTINGS.enterNormal) as KeyCombo,
+  enterSession: parseKeyCombo(DEFAULT_VIM_KEYMAP_SETTINGS.enterSession) as KeyCombo,
+}
 
 /**
  * The one write path this adapter needs off the framework session kit's
@@ -31,6 +47,8 @@ export interface TextareaAdapterOptions {
   readonly engine: VimEngine
   readonly inputActions: DraftWriter
   readonly mode: ModeMachine
+  /** Mode-entry shortcuts, live-editable via the settings card; defaults to the stock Escape/Shift+Escape combos when omitted (every existing caller). */
+  readonly keymap?: KeymapRef
 }
 
 /** Live handle returned by {@link attachTextareaAdapter}. */
@@ -40,7 +58,7 @@ export interface TextareaAdapter {
 }
 
 export function attachTextareaAdapter(options: TextareaAdapterOptions): TextareaAdapter {
-  const { textarea, engine, inputActions, mode } = options
+  const { textarea, engine, inputActions, mode, keymap } = options
 
   const restoreCaret = (start: number, end: number): void => {
     requestAnimationFrame(() => {
@@ -79,14 +97,15 @@ export function attachTextareaAdapter(options: TextareaAdapterOptions): Textarea
     // the one case this adapter must never touch.
     if (e.isComposing) return
     const current = mode.current.mode
+    const { enterNormal, enterSession } = keymap?.current ?? DEFAULT_KEYMAP
     if (current === 'insert') {
-      if (e.key === 'Escape' && !e.shiftKey) {
+      if (matchesKeyCombo(e, enterNormal)) {
         e.preventDefault()
         e.stopPropagation()
         enterNormalFromHost()
         return
       }
-      if (e.key === 'Escape' && e.shiftKey) {
+      if (matchesKeyCombo(e, enterSession)) {
         e.preventDefault()
         e.stopPropagation()
         // Session mode's keydown handling is document-level and expects to
@@ -103,6 +122,15 @@ export function attachTextareaAdapter(options: TextareaAdapterOptions): Textarea
     if (current === 'normal') {
       e.preventDefault()
       e.stopPropagation()
+      if (matchesKeyCombo(e, enterSession)) {
+        // Same global "jump to Session" shortcut as Insert mode's — Normal
+        // is still Insert's own textarea, just mid-edit, so the same
+        // IME-safety blur applies before Session's document-level keydown
+        // handler takes over.
+        textarea.blur()
+        mode.enterSession()
+        return
+      }
       if (e.key === ':') {
         // The vim engine's own ':' (its ex command line) is never visible —
         // it lives on the headless, never-mounted shadow EditorView. This

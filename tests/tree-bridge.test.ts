@@ -67,10 +67,77 @@ describe('createWorkspaceTreeBridge', () => {
     root.remove()
   })
 
-  it('focusSearch is an honest stub that returns false (see README "Known limitations")', () => {
+  it('focusSearch returns false when no search input is on screen', () => {
     const root = buildTree()
     const bridge = createWorkspaceTreeBridge({ root })
     expect(bridge.focusSearch()).toBe(false)
     root.remove()
+  })
+
+  it('focusSearch clicks the collapsed search toggle, then focuses the input (confirmed against a real dsh instance: a bare .focus() alone does not expand it)', () => {
+    const container = document.createElement('div')
+    container.innerHTML = `
+      <div class="hashedSearchWrapper">
+        <button class="hashedSearchButton" aria-label="搜索会话" aria-expanded="false"></button>
+        <input type="text" class="hashedSearchInput">
+      </div>
+    `
+    const root = buildTree()
+    container.appendChild(root)
+    document.body.appendChild(container)
+
+    const toggle = container.querySelector('button')
+    if (toggle === null) throw new Error('unreachable')
+    let toggleClicks = 0
+    toggle.addEventListener('click', () => { toggleClicks += 1 })
+
+    const bridge = createWorkspaceTreeBridge({ root: container })
+    expect(bridge.focusSearch()).toBe(true)
+    expect(toggleClicks).toBe(1)
+    expect(document.activeElement).toBe(container.querySelector('input'))
+
+    container.remove()
+  })
+
+  it('focusSearch does not re-click an already-expanded search toggle', () => {
+    const container = document.createElement('div')
+    container.innerHTML = `
+      <div class="hashedSearchWrapper">
+        <button class="hashedSearchButton" aria-label="搜索会话" aria-expanded="true"></button>
+        <input type="text" class="hashedSearchInput">
+      </div>
+    `
+    const root = buildTree()
+    container.appendChild(root)
+    document.body.appendChild(container)
+
+    const toggle = container.querySelector('button')
+    if (toggle === null) throw new Error('unreachable')
+    let toggleClicks = 0
+    toggle.addEventListener('click', () => { toggleClicks += 1 })
+
+    const bridge = createWorkspaceTreeBridge({ root: container })
+    expect(bridge.focusSearch()).toBe(true)
+    expect(toggleClicks).toBe(0)
+    expect(document.activeElement).toBe(container.querySelector('input'))
+
+    container.remove()
+  })
+
+  it('focusSearch skips a text input inside an open dialog (e.g. the rename-workspace dialog)', () => {
+    const container = document.createElement('div')
+    container.innerHTML = `
+      <div role="dialog" aria-label="Rename workspace">
+        <input type="text" value="my-workspace">
+      </div>
+    `
+    const root = buildTree()
+    container.appendChild(root)
+    document.body.appendChild(container)
+
+    const bridge = createWorkspaceTreeBridge({ root: container })
+    expect(bridge.focusSearch()).toBe(false) // the only text input on screen is inside the dialog
+
+    container.remove()
   })
 })

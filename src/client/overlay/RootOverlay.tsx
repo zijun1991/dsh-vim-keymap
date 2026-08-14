@@ -13,6 +13,7 @@ import type { TreeRow } from '../../bridge/contract.js'
 import type { LocalKeymapSettingsStore } from '../settings/local-store.js'
 import { createWorkspaceTreeBridge } from '../workspace/tree-bridge.js'
 import { findComposerTextarea } from '../normal/textarea-adapter.js'
+import { saveSessionLog } from '../session/session-log-bridge.js'
 import { HighlightOverlay } from './HighlightOverlay.js'
 import { CommandPalette } from './CommandPalette.js'
 import { ModeIndicator } from './ModeIndicator.js'
@@ -120,14 +121,24 @@ export function createRootOverlay(
         mode.exitCommand()
         if (flavor === 'normal') findComposerTextarea()?.focus()
       }
+      const submit = (command: string): void => {
+        // The only command in the vocabulary so far (see README "Known
+        // limitations" for the rest of the palette shell), and normal-flavor
+        // only — it mirrors vim's own `:w`, entered from Normal mode, not
+        // Session's tree-navigation vocabulary. A leading "/" is tolerated
+        // so both ":save" and ":/save" work, since either reading of a
+        // slash-style command is reasonable here.
+        if (flavor === 'normal' && command.trim().replace(/^\//, '').toLowerCase() === 'save') {
+          saveSessionLog()
+        }
+        exit()
+      }
       return (
         <>
           {modeIndicator}
           <CommandPalette
             flavor={flavor}
-            // No command vocabulary exists yet (see README "Known limitations")
-            // — this is the palette shell only; submitting just closes it.
-            onSubmit={exit}
+            onSubmit={submit}
             onCancel={exit}
           />
         </>

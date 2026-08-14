@@ -12,6 +12,7 @@ Insert (default, composer textarea)
   Cmd/Alt+Enter  -> send (untouched)
 
 Normal (real vim text editing, inside the composer textarea)
+  Shift+Esc      -> Session (same shortcut and target as Insert's)
   :              -> Command (normal flavor)
   i/a/o/...      -> Insert
 
@@ -19,21 +20,26 @@ Session (workspace/session tree navigation, not text)
   j/k            -> move highlight
   Enter          -> on a workspace row: fold/unfold; on a session/search-result
                     row: open it and return straight to Insert (composer refocused)
-  /              -> focus the host's session search (not yet wired, see below)
+  /              -> focus the host's session search
   :              -> Command (session flavor)
   Esc            -> straight to Insert (composer refocused)
 
 Command (one global floating input, two visually distinct flavors)
+  save           -> (normal flavor only) click the host's own "Session log"
+                    download button — see "Known limitations" for the rest
+                    of the vocabulary, which is still just the palette shell
 ```
 
 A small mode badge (bottom-right, non-interactive, reads `Vim Mode: <MODE>`)
 shows which of the four modes is live — the only visual cue for it, since
 nothing in the host UI otherwise indicates vim state. Its display policy —
 `'persistent'` (always shown, the default), `'on-change'` (shown for ~1.2s
-after a transition, then hidden), or `'hidden'` — is user-editable through a
-"Vim Keymap" card this plugin registers into Settings → Plugins → Plugin
-configuration, backed by `localStorage` (see "Settings persistence" below for
-why not the Host settings document).
+after a transition, then hidden), or `'hidden'` — and the `enterNormal`/
+`enterSession` shortcuts themselves (default `Escape`/`Shift+Escape`;
+`enterSession` fires from both Insert and Normal) are all
+user-editable through a "Vim Keymap" card this plugin registers into
+Settings → Plugins → Plugin configuration, backed by `localStorage` (see
+"Settings persistence" below for why not the Host settings document).
 
 ## Why this never touches deepseek-harness
 
@@ -49,9 +55,10 @@ Every integration point is either an existing, general-purpose extension point, 
 The "Vim Keymap" card (`settings.plugin.item`, declared by
 `@deepseek-ai/dsh-client-ui-settings-plugins`) is a genuine public list slot —
 registering into it the same `ctx.slots.inject` way as the other two slots
-above works fine. A real `ctx.settings` registration for its one field (the
-mode-badge display policy) does not: confirmed against a real running `dsh
---profile web` instance, writing through the registered namespace fails with
+above works fine. A real `ctx.settings` registration for its fields (the
+mode-badge display policy, the `enterNormal`/`enterSession` shortcuts) does
+not: confirmed against a real running `dsh --profile web` instance, writing
+through the registered namespace fails with
 
 ```json
 {"error":{"code":"settings-not-exposed","message":"settings namespace \"dsh-vim-keymap\" is not exposed to configuration clients"}}
@@ -89,11 +96,10 @@ methods — bound once at construction, safe to pass around bare.
 
 ## Known limitations / follow-up work
 
-- **Command mode has no command vocabulary yet.** It is the palette shell only (portal mount, flavor-specific styling, submit/cancel keys) — submitting a typed command currently just closes the palette without acting on it. Designing the actual `normal`/`session` command sets is separate, product-facing work.
-- **`focusSearch()` is a stub.** `ui-workspace`'s `WorkspaceBrowser.tsx` renders at least three `<input type="text">` elements (rename dialog, workspace-path field, session search); a real-browser check is needed to find a selector that reliably picks the search box and not, say, an open rename dialog.
-- **Shortcuts (`enterNormal`/`enterSession`/`submit` in `src/config.ts`) are still hardcoded constants, not user-editable.** The mode-indicator display policy no longer has this limitation — it is wired to the "Vim Keymap" settings card (see "Settings persistence" above). Making the shortcuts themselves configurable needs a key-combo parser (matching strings like `"Shift+Escape"` against a live `KeyboardEvent`) that does not exist yet; deferred as separate, larger work rather than guessed at.
+- **Command mode's vocabulary has exactly one command: `save` (normal flavor only).** It clicks the host's own "Session log" button (the closest existing UI affordance to "save this session" — there is no `InputActions`/`SessionInput` verb for it; see `src/client/session/session-log-bridge.ts`), matched by that button's visible text since it carries no `aria-label` and its CSS class is build-hashed. Everything else about the palette is still shell only (portal mount, flavor-specific styling, submit/cancel keys) — session-flavor commands and a richer normal-flavor vocabulary are separate, product-facing work.
+- **`focusSearch()` drives the real session-search input**, confirmed against a real running `dsh --profile web` instance: `ui-workspace`'s `WorkspaceBrowser.tsx` renders it as a plain, always-present `<input type="text">` with no distinguishing `aria-label`/stable class, expanding purely off its own focus/blur (no separate "expand" click needed). The one other `<input type="text">` seen on screen — the rename-workspace dialog's name field — only exists while that dialog's `role="dialog"` wrapper is mounted, which is what `src/client/workspace/tree-bridge.ts` excludes on to tell the two apart.
+- **`enterNormal`/`enterSession` are now user-editable** through the "Vim Keymap" settings card, backed by a small key-combo parser (`src/key-combo.ts`) that matches strings like `"Shift+Escape"` against a live `KeyboardEvent`. The `submit` constant that used to sit alongside them in `src/config.ts` was dropped rather than carried forward: this plugin never intercepts the host's own send shortcut (see the Modes diagram above — "untouched"), so a setting for it could never have done anything; `src/config.ts` itself was dead code (nothing imported it) and was deleted once `src/settings.ts` became the real, live-editable source of truth for these defaults.
 - **`@deepseek-ai/dsh-client-*`'s `latest` npm dist-tag is currently broken** (`0.0.1-rc.1` depends on `@deepseek-ai/dsh-compact`, `@deepseek-ai/dsh-client-ui-slash`, and `@deepseek-ai/dsh-type-meta`, none of which are published) — this repo pins the `next` dist-tag (`0.1.0-rc.6`) instead, which resolves cleanly. Worth reporting upstream.
-- **Real human IME composition is still unverified.** `e.isComposing` bypasses are unit-tested and the logic is sound, but a genuine OS IME session needs a human at a keyboard — automated browser tools cannot drive one.
 
 ## Development
 

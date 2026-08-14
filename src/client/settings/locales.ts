@@ -14,6 +14,7 @@ export const VIM_KEYMAP_SETTINGS_LOCALE_NS = 'dsh-vim-keymap.settings'
 export type VimKeymapSettingsLocaleKey =
   | 'title' | 'description' | 'expand' | 'collapse'
   | 'modeIndicatorLabel' | 'persistent' | 'onChange' | 'hidden' | 'localOnly'
+  | 'enterNormalLabel' | 'enterSessionLabel' | 'shortcutHint' | 'invalidShortcut'
 
 /** Simplified Chinese copy. */
 export const zh: Record<VimKeymapSettingsLocaleKey, string> = {
@@ -26,6 +27,10 @@ export const zh: Record<VimKeymapSettingsLocaleKey, string> = {
   onChange: '仅切换时显示',
   hidden: '不显示',
   localOnly: '仅保存在此浏览器，不随账号同步。',
+  enterNormalLabel: '进入 Normal 模式',
+  enterSessionLabel: '进入 Session 模式',
+  shortcutHint: '例如 Escape、Shift+Escape',
+  invalidShortcut: '无法识别的按键组合，未保存。',
 }
 
 /** English copy. */
@@ -39,6 +44,10 @@ export const en: Record<VimKeymapSettingsLocaleKey, string> = {
   onChange: 'On mode change',
   hidden: 'Hidden',
   localOnly: 'Saved in this browser only, not synced with your account.',
+  enterNormalLabel: 'Enter Normal mode',
+  enterSessionLabel: 'Enter Session mode',
+  shortcutHint: 'e.g. Escape, Shift+Escape',
+  invalidShortcut: 'Unrecognized key combo, not saved.',
 }
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {

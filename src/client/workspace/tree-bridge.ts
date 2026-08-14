@@ -10,15 +10,36 @@
 import type { TreeRow, WorkspaceTreeBridge } from '../../bridge/contract.js'
 
 /**
- * TODO(follow-up, not yet verified): WorkspaceBrowser.tsx renders at least
- * three `<input type="text">` elements (rename dialog, workspace-path field,
- * and the search box) and none were confirmed to carry a distinguishing
- * `aria-label`/class from source reading alone — a real-browser check is
- * needed to find a selector that reliably picks the search box specifically
- * and not, say, an open rename dialog's input. `focusSearch()` is a stub
- * until then; see README.md "Known limitations".
+ * Confirmed against a real running `dsh --profile web` instance:
+ * WorkspaceBrowser.tsx renders the session-search `<input type="text">`
+ * directly in the sidebar (no distinguishing `aria-label`, and its CSS
+ * class is a build-hashed CSS-module name, not a stable selector target),
+ * while the *other* `<input type="text">` on screen — the rename-workspace
+ * dialog's name field — only exists while that dialog's `role="dialog"`
+ * wrapper is mounted. Excluding any input inside a `role="dialog"` ancestor
+ * is what reliably tells them apart.
  */
-const SEARCH_INPUT_SELECTOR: string | null = null
+function findSearchInput(root: Document | HTMLElement): HTMLInputElement | null {
+  const candidates = root.querySelectorAll<HTMLInputElement>('input[type="text"]')
+  for (const input of candidates) {
+    if (input.closest('[role="dialog"]') === null) return input
+  }
+  return null
+}
+
+/**
+ * The search box starts visually collapsed (zero width, `opacity: 0`,
+ * `pointer-events: none`) — confirmed against a real running `dsh --profile
+ * web` instance that a bare `.focus()` on it does NOT expand it; only a real
+ * click on its sibling toggle button does (which also focuses the input
+ * itself as part of that same click). The toggle has no stable class either,
+ * but it shares the input's own parent and is the only sibling carrying
+ * `aria-expanded` — locale/build-independent, unlike matching on its
+ * (Chinese) `aria-label`.
+ */
+function findSearchToggle(input: HTMLInputElement): HTMLButtonElement | null {
+  return input.parentElement?.querySelector<HTMLButtonElement>('button[aria-expanded]') ?? null
+}
 
 function rowKindOf(el: Element): TreeRow['kind'] {
   if (el.tagName === 'BUTTON') return 'search-result' // SearchResultItem is the only <button role="treeitem">
@@ -54,9 +75,12 @@ export function createWorkspaceTreeBridge(options: CreateWorkspaceTreeBridgeOpti
       row.element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     },
     focusSearch(): boolean {
-      if (SEARCH_INPUT_SELECTOR === null) return false
-      const input = root.querySelector<HTMLInputElement>(SEARCH_INPUT_SELECTOR)
+      const input = findSearchInput(root)
       if (input === null) return false
+      const toggle = findSearchToggle(input)
+      if (toggle !== null && toggle.getAttribute('aria-expanded') !== 'true') {
+        toggle.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+      }
       input.focus()
       return true
     },

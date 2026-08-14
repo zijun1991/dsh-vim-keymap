@@ -1,7 +1,7 @@
 /**
  * This plugin's card in Settings -> Plugins -> Plugin Configuration
  * (`settings.plugin.item`, declared by `@deepseek-ai/dsh-client-ui-settings-plugins`).
- * One field — the mode-badge display policy — applies instantly on change;
+ * The mode-badge display policy (a `<select>`) applies instantly on change;
  * there is no save/discard staging, since a single enum selection needs none
  * of the multi-field editing that staged form exists for. Persists to
  * `localStorage` (see local-store.ts), not the Host settings document — a
@@ -17,8 +17,13 @@
  * (see locales.ts) since this card sits among the Host's own zh/en cards;
  * `t` arrives as a framework-injected prop (via `locale:` at registration),
  * not by closure, because only that path re-renders on a live locale switch.
+ *
+ * The two shortcut fields (`enterNormal`/`enterSession`) commit on blur/Enter
+ * rather than on every keystroke — a combo string is only meaningful once
+ * finished (e.g. "Shift+Escape" is unparseable mid-type as "Shift+Esc"), so
+ * committing per-keystroke would reject-then-accept on every character.
  */
-import { useState, useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { MODE_INDICATOR_DISPLAYS } from '../../settings.js'
 import type { ModeIndicatorDisplay } from '../../settings.js'
 import type { LocalKeymapSettingsStore } from './local-store.js'
@@ -28,6 +33,49 @@ const DISPLAY_LABEL_KEY: Record<ModeIndicatorDisplay, VimKeymapSettingsLocaleKey
   persistent: 'persistent',
   'on-change': 'onChange',
   hidden: 'hidden',
+}
+
+interface ShortcutFieldProps {
+  readonly label: string
+  readonly hint: string
+  readonly invalidMessage: string
+  readonly value: string
+  readonly onCommit: (next: string) => boolean
+}
+
+function ShortcutField({ label, hint, invalidMessage, value, onCommit }: ShortcutFieldProps): React.JSX.Element {
+  const [draft, setDraft] = useState(value)
+  const [invalid, setInvalid] = useState(false)
+
+  // The store's own canonical formatting (see local-store.ts's setEnterNormal/
+  // setEnterSession) can differ from what the user typed (e.g. "escape" ->
+  // "Escape") — resync the draft whenever the committed value actually changes.
+  useEffect(() => { setDraft(value); setInvalid(false) }, [value])
+
+  const commit = (): void => {
+    if (draft.trim() === value) { setInvalid(false); return }
+    setInvalid(!onCommit(draft.trim()))
+  }
+
+  return (
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, marginTop: 12 }}>
+      <span>{label}</span>
+      <input
+        type="text"
+        value={draft}
+        placeholder={hint}
+        onChange={(e) => { setDraft(e.target.value) }}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key !== 'Enter') return
+          commit()
+          e.currentTarget.blur()
+        }}
+        style={{ font: 'inherit', padding: '4px 8px' }}
+      />
+      {invalid ? <span style={{ color: '#e05d5d', fontSize: 11 }}>{invalidMessage}</span> : null}
+    </label>
+  )
 }
 
 export interface VimKeymapSettingsCardProps {
@@ -81,6 +129,20 @@ export function createVimKeymapSettingsCard(
                   ))}
                 </select>
               </label>
+              <ShortcutField
+                label={t('enterNormalLabel')}
+                hint={t('shortcutHint')}
+                invalidMessage={t('invalidShortcut')}
+                value={snapshot.enterNormal}
+                onCommit={(next) => settings.setEnterNormal(next)}
+              />
+              <ShortcutField
+                label={t('enterSessionLabel')}
+                hint={t('shortcutHint')}
+                invalidMessage={t('invalidShortcut')}
+                value={snapshot.enterSession}
+                onCommit={(next) => settings.setEnterSession(next)}
+              />
               <p style={{ fontSize: 12, opacity: 0.65, margin: '8px 0 0' }}>{t('localOnly')}</p>
             </div>
           )

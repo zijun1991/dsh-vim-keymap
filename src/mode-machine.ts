@@ -35,9 +35,11 @@ export class ModeMachine {
     if (this.state.mode === 'insert') this.transition({ mode: 'normal', commandFlavor: null })
   }
 
-  /** Insert -> Session (Shift+Esc by default). No-op outside Insert. */
+  /** Insert or Normal -> Session (Shift+Esc by default, from either). No-op from Session/Command. */
   enterSession(): void {
-    if (this.state.mode === 'insert') this.transition({ mode: 'session', commandFlavor: null })
+    if (this.state.mode === 'insert' || this.state.mode === 'normal') {
+      this.transition({ mode: 'session', commandFlavor: null })
+    }
   }
 
   /** Normal/Session/Command -> Insert. Idempotent from Insert itself. */
