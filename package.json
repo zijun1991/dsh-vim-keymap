@@ -3,6 +3,15 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Vim keybindings for the deepseek-harness Web GUI, mounted as an out-of-tree Cordis plugin.",
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "vim",
+    "keymap",
+    "keybindings",
+    "plugin"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
